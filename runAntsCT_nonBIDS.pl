@@ -89,6 +89,7 @@ my $templateRegMask = "${templateDir}/T_template0_BrainCerebellumRegistrationMas
 my $templatePriorSpec = "${templateDir}/priors/priors%d.nii.gz";
 
 GetOptions ("anatomical-image=s" => \$anatomicalImage,
+            "denoise=i" => \$denoise,
             "num-threads=i" => \$numThreads,
 	    "output-dir=s" => \$outputDir,
 	    "output-file-root=s" => \$outputFileRoot,
@@ -100,14 +101,14 @@ GetOptions ("anatomical-image=s" => \$anatomicalImage,
 (-f $anatomicalImage) or die "\nCannot find anatomical image: $anatomicalImage\n";
 
 if ($numThreads == 0) {
-  print "Maximum number of threads not set. Not setting ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS\n";
+    print "Maximum number of threads not set. Not setting ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS\n";
 }
 else {
-  $ENV{'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS'}=$numThreads;
+    $ENV{'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS'}=$numThreads;
 }
 
 if (! -d $outputDir) {
-  system("mkdir -p $outputDir") == 0 or die "\nCannot create output directory $outputDir";
+    system("mkdir -p $outputDir") == 0 or die "\nCannot create output directory $outputDir";
 }
 
 my $outputRoot = "${outputDir}/${outputFileRoot}";
@@ -118,10 +119,13 @@ system("${antsPath}antsRegistration --version > ${outputRoot}antsVersionInfo.txt
 my $antsInputImage = $anatomicalImage;
 
 if ($trimNeck) {
-  my $trimmedImage = "${outputRoot}NeckTrim.nii.gz";
-  system("trim_neck.sh -d $anatomicalImage $trimmedImage > ${outputRoot}TrimNeckOutput.txt") == 0 
-    or die("Neck trimming exited with nonzero status");
-  $antsInputImage = $trimmedImage;
+    my $trimmedImage = "${outputRoot}NeckTrim.nii.gz";
+   
+    if (!-f $trimmedImage) {
+        system("trim_neck.sh -d $anatomicalImage $trimmedImage > ${outputRoot}TrimNeckOutput.txt") == 0 
+          or die("Neck trimming exited with nonzero status");
+    }
+    $antsInputImage = $trimmedImage;
 }
 
 print "Running antsCorticalThickness.sh\n";
@@ -138,9 +142,21 @@ my $antsCTCmd = "${antsPath}antsCorticalThickness.sh \\
    -m ${templateMask} \\
    -f ${templateRegMask} \\
    -p ${templatePriorSpec} \\
-   -a ${antsInputImage} > ${outputRoot}antsCorticalThicknessOutput.txt 2>&1";
+   -a ${antsInputImage} >> ${outputRoot}antsCorticalThicknessOutput.txt 2>&1";
 
 my $antsExit = system("$antsCTCmd");
+
+
+# Warp Lausanne and DKT31 labels to subject space
+
+system("${antsPath}antsApplyTransforms -d 3 -r ${outputRoot}ExtractedBrain0N4.nii.gz -t ${outputRoot}TemplateToSubject1GenericAffine.mat -t ${outputRoot}TemplateToSubject0Warp.nii.gz -n GenericLabel -i ${templateDir}/labels/DKT31/DKT31.nii.gz -o ${outputRoot}DKT31.nii.gz");
+
+# Scales go up to 250 and even 500, but they take a long time to interpolate
+my @lausanneScales = (33, 60, 125);
+
+foreach my $scale (@lausanneScales) {
+    system("${antsPath}antsApplyTransforms -d 3 -r ${outputRoot}ExtractedBrain0N4.nii.gz -t ${outputRoot}TemplateToSubject1GenericAffine.mat -t ${outputRoot}TemplateToSubject0Warp.nii.gz -n GenericLabel -i ${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz -o ${outputRoot}Lausanne_Scale${scale}.nii.gz");    
+}
 
 # Pass antsCT exit code back to calling program
 exit($antsExit >> 8);
