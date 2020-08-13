@@ -34,5 +34,6 @@ The trim_neck.sh is provided by Paul Yushkevich and Sandhitsu Das, and uses
 
 ## References
 
-For ANTs cortical thickness: [Tustison, et al 2014](doi: 10.1016/j.neuroimage.2014.05.044)
-For c3d: [Yushkevich, et al 2006](http://dx.doi.org/10.1016/j.neuroimage.2006.01.015)
+For ANTs cortical thickness: [Tustison, et al 2014](http://dx.doi.org/10.1016/j.neuroimage.2014.05.044).
+
+For c3d: [Yushkevich, et al 2006](http://dx.doi.org/10.1016/j.neuroimage.2006.01.015).
