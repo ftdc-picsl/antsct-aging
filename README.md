@@ -1,4 +1,5 @@
 # antsct-aging
+
 ANTs cortical thickness pipeline container, contains a template for older
 individuals. 
 
@@ -9,7 +10,21 @@ The template is provided by Nick Tustison.
 Cortical labels are warped to the subject space after processing, label
 information and definitions are under template/labels.
 
-## Links
+
+## Container images
+
+Download Docker images from [DockerHub](https://hub.docker.com/repository/docker/cookpa/antsct-aging/general).
+
+To build a Singularity image, 
+
+```
+sudo singularity build antsct-aging-tag.sif docker://cookpa/antsct-aging:tag
+```
+
+where "tag" is the version you want to build, or "latest" to get the latest version.
+
+
+## Included software
 
 ANTs cortical thickness is part of [ANTs](https://github.com/ANTsX/ANTs).
 
