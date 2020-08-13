@@ -144,20 +144,57 @@ my $antsCTCmd = "${antsPath}antsCorticalThickness.sh \\
    -p ${templatePriorSpec} \\
    -a ${antsInputImage} >> ${outputRoot}antsCorticalThicknessOutput.txt 2>&1";
 
-my $antsExit = system("$antsCTCmd");
+my $antsExit = system($antsCTCmd);
 
+print "Warping cortical labels to subject space\n";
 
 # Warp Lausanne and DKT31 labels to subject space
 
-system("${antsPath}antsApplyTransforms -d 3 -r ${outputRoot}ExtractedBrain0N4.nii.gz -t ${outputRoot}TemplateToSubject1GenericAffine.mat -t ${outputRoot}TemplateToSubject0Warp.nii.gz -n GenericLabel -i ${templateDir}/labels/DKT31/DKT31.nii.gz -o ${outputRoot}DKT31.nii.gz");
+# first get GM mask
+my $gmMask = "${outputRoot}GMMask.nii.gz";
+
+system("${antsPath}ThresholdImage 3 ${outputRoot}BrainSegmentation.nii.gz $gmMask 2 2");
+
+propagateCorticalLabels($gmMask, "${templateDir}/labels/DKT31/DKT31.nii.gz", $outputRoot, "DKT31");
 
 # Scales go up to 250 and even 500, but they take a long time to interpolate
 my @lausanneScales = (33, 60, 125);
 
 foreach my $scale (@lausanneScales) {
-    system("${antsPath}antsApplyTransforms -d 3 -r ${outputRoot}ExtractedBrain0N4.nii.gz -t ${outputRoot}TemplateToSubject1GenericAffine.mat -t ${outputRoot}TemplateToSubject0Warp.nii.gz -n GenericLabel -i ${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz -o ${outputRoot}Lausanne_Scale${scale}.nii.gz");    
+    propagateCorticalLabels($gmMask, "${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz", $outputRoot, "LausanneCorticalScale${scale}");
 }
 
 # Pass antsCT exit code back to calling program
 exit($antsExit >> 8);
 
+
+# Map cortical labels to the subject GM, mask with GM and propagate through GM mask
+#
+# args: gmMask - GM binary image, derived from BrainSegmentation.nii.gz
+#       labelImage - label image in template space, to warp
+#       outputRoot - output root for antsCT. Used to find warps and name output
+#       outputLabelName - added to output root, eg "DKT31"
+#
+# propagateCorticalLabels($gmMask, $labelImage, $outputRoot, $outputLabelName) 
+#
+sub propagateCorticalLabels {
+
+    my ($gmMask, $labelImage, $outputRoot, $outputLabelName) = @_;
+
+    my $tmpLabels = "${outputRoot}tmp${outputLabelName}.nii.gz";
+
+    my $warpCmd = "${antsPath}antsApplyTransforms \\
+      -d 3 -r ${outputRoot}ExtractedBrain0N4.nii.gz \\
+      -t ${outputRoot}TemplateToSubject1GenericAffine.mat \\
+      -t ${outputRoot}TemplateToSubject0Warp.nii.gz \\
+      -n GenericLabel \\
+      -i $labelImage \\
+      -o $tmpLabels";
+
+    (system($warpCmd) == 0) or die("Could not warp labels $labelImage to subject space");
+
+    (system("ImageMath 3 ${outputRoot}${outputLabelName}.nii.gz PropagateLabelsThroughMask $gmMask $tmpLabels 10 0")) == 0 
+          or die("Could not propagate labels $labelImage through GM mask");
+
+    system("rm -f $tmpLabels");
+}
