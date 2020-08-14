@@ -150,18 +150,19 @@ print "Warping cortical labels to subject space\n";
 
 # Warp Lausanne and DKT31 labels to subject space
 
-# first get GM mask
-my $gmMask = "${outputRoot}GMMask.nii.gz";
+# First get GM mask, which we will define as thickness > 0
+# This incorporates some topology constraints to keep the labels in cortex
+my $corticalMask = "${outputRoot}CorticalMask.nii.gz";
 
-system("${antsPath}ThresholdImage 3 ${outputRoot}BrainSegmentation.nii.gz $gmMask 2 2");
+system("${antsPath}ThresholdImage 3 ${outputRoot}CorticalThickness.nii.gz $corticalMask 0.0001 1000");
 
-propagateCorticalLabels($gmMask, "${templateDir}/labels/DKT31/DKT31.nii.gz", $outputRoot, "DKT31");
+propagateCorticalLabels($corticalMask, "${templateDir}/labels/DKT31/DKT31.nii.gz", $outputRoot, "DKT31");
 
 # Scales go up to 250 and even 500, but they take a long time to interpolate
 my @lausanneScales = (33, 60, 125);
 
 foreach my $scale (@lausanneScales) {
-    propagateCorticalLabels($gmMask, "${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz", $outputRoot, "LausanneCorticalScale${scale}");
+    propagateCorticalLabels($corticalMask, "${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz", $outputRoot, "LausanneCorticalScale${scale}");
 }
 
 # Pass antsCT exit code back to calling program
@@ -170,16 +171,19 @@ exit($antsExit >> 8);
 
 # Map cortical labels to the subject GM, mask with GM and propagate through GM mask
 #
-# args: gmMask - GM binary image, derived from BrainSegmentation.nii.gz
+# args: corticalMask - binary image to label
 #       labelImage - label image in template space, to warp
 #       outputRoot - output root for antsCT. Used to find warps and name output
 #       outputLabelName - added to output root, eg "DKT31"
 #
 # propagateCorticalLabels($gmMask, $labelImage, $outputRoot, $outputLabelName) 
 #
+# In addition to propagating the labels, make a QC file showing overlap between labels
+# before and after label propagation step.
+#
 sub propagateCorticalLabels {
 
-    my ($gmMask, $labelImage, $outputRoot, $outputLabelName) = @_;
+    my ($corticalMask, $labelImage, $outputRoot, $outputLabelName) = @_;
 
     my $tmpLabels = "${outputRoot}tmp${outputLabelName}.nii.gz";
 
@@ -193,8 +197,10 @@ sub propagateCorticalLabels {
 
     (system($warpCmd) == 0) or die("Could not warp labels $labelImage to subject space");
 
-    (system("ImageMath 3 ${outputRoot}${outputLabelName}.nii.gz PropagateLabelsThroughMask $gmMask $tmpLabels 10 0")) == 0 
-          or die("Could not propagate labels $labelImage through GM mask");
+    (system("${antsPath}ImageMath 3 ${outputRoot}${outputLabelName}.nii.gz PropagateLabelsThroughMask $corticalMask $tmpLabels 8 0")) == 0 
+          or die("Could not propagate labels $labelImage through cortical mask");
+
+    system("${antsPath}LabelOverlapMeasures 3 ${outputRoot}${outputLabelName}.nii.gz $tmpLabels ${outputRoot}${outputLabelName}WarpedVsPropagated.csv");
 
     system("rm -f $tmpLabels");
 }
