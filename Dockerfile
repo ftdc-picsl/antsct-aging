@@ -17,12 +17,12 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
     | apt-key add - \
   && apt-add-repository -y 'deb https://apt.kitware.com/ubuntu/ xenial main' \
   && apt-get update \
-  && apt-get -y install cmake
+  && apt-get -y install cmake=3.18.3-0kitware1 cmake-data=3.18.3-0kitware1
 
 RUN mkdir -p /tmp/ants/src \
     && git clone https://github.com/ANTsX/ANTs.git /tmp/ants/src \
     && cd /tmp/ants/src \ 
-    && git checkout 470caebf88ae930babb4239244347873ac7a45e5 \
+    && git checkout v2.3.5 \
     && mkdir -p /tmp/ants/build \
     && cd /tmp/ants/build \
     && mkdir -p /opt/ants \
