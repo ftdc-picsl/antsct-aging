@@ -1,0 +1,37 @@
+Label.ID,Label.Name
+4,3rd Ventricle
+11,4th Ventricle
+23,Right Accumbens Area
+30,Left Accumbens Area
+31,Right Amygdala
+32,Left Amygdala
+35,Brain Stem
+36,Right Caudate
+37,Left Caudate
+38,Right Cerebellum Exterior
+39,Left Cerebellum Exterior
+40,Right Cerebellum White Matter
+41,Left Cerebellum White Matter
+44,Right Cerebral White Matter
+45,Left Cerebral White Matter
+46,CSF
+47,Right Hippocampus
+48,Left Hippocampus
+49,Right Inf Lat Vent
+50,Left Inf Lat Vent
+51,Right Lateral Ventricle
+52,Left Lateral Ventricle
+55,Right Pallidum
+56,Left Pallidum
+57,Right Putamen
+58,Left Putamen
+59,Right Thalamus Proper
+60,Left Thalamus Proper
+61,Right Ventral DC
+62,Left Ventral DC
+69,Optic Chiasm
+71,Cerebellar Vermal Lobules I-V
+72,Cerebellar Vermal Lobules VI-VII
+73,Cerebellar Vermal Lobules VIII-X
+75,Left Basal Forebrain
+76,Right Basal Forebrain
