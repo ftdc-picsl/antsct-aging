@@ -32,6 +32,12 @@ The trim_neck.sh is provided by Paul Yushkevich and Sandhitsu Das, and uses
 [c3d](https://github.com/pyushkevich/c3d).
 
 
+## Brain labels
+
+Please see the individual label directories under the template directory for
+label information including citations and licensing terms.
+
+
 ## References
 
 For ANTs cortical thickness: [Tustison, et al 2014](http://dx.doi.org/10.1016/j.neuroimage.2014.05.044).
