@@ -38,9 +38,10 @@ Subcortical labels
 ------------------
 
 Subcortical labels (labelID < 100) not listed as "ignore" in the segmentation
-challenge are included. 
- 
-The original full label set is included for reference.
+challenge are included. Ignored labels have been removed. See the label
+definitions and the segmentation protocol at
+
+http://neuromorphometrics.com/Seg/
 
 
 Original atlas information
