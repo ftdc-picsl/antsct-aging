@@ -159,7 +159,7 @@ system("${antsPath}ThresholdImage 3 ${outputRoot}CorticalThickness.nii.gz $corti
 propagateCorticalLabels($corticalMask, "${templateDir}/labels/DKT31/DKT31.nii.gz", $outputRoot, "DKT31");
 
 # Scales go up to 250 and even 500, but they take a long time to interpolate
-my @lausanneScales = (33, 60, 125);
+my @lausanneScales = (33, 60, 125, 250);
 
 foreach my $scale (@lausanneScales) {
     propagateCorticalLabels($corticalMask, "${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz", $outputRoot, "LausanneCorticalScale${scale}");

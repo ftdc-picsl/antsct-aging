@@ -59,6 +59,8 @@ COPY trim_neck.sh /opt/scripts/trim_neck.sh
 # BIDS script when it's ready to use 
 # COPY runANTsCT.py /opt/scripts/runANTsCT.py
 COPY template /opt/template
+# Get MNI152 to template warp
+RUN wget --directory-prefix /opt/template/MNI152NLin2009cAsym --content-disposition https://ndownloader.figshare.com/files/26136116
 RUN chmod a+x /opt/scripts/*
 
 WORKDIR /data
