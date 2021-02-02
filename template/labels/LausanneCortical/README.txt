@@ -6,6 +6,14 @@ template. See
 
   https://github.com/mattcieslak/easy_lausanne
 
+The recommended citation for this method is
+
+  https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3525592/
+  
+The underlying parcellation method is described in
+
+  https://pubmed.ncbi.nlm.nih.gov/22001222/
+
 Some additional dilation was done to convert the surface into a more dense
 parcellation of the cortex in the template volume. Details below.
 

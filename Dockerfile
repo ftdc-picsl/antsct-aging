@@ -37,12 +37,18 @@ RUN mkdir -p /tmp/ants/src \
     && cd ANTS-build \
     && cmake --install .
 
+# Copy the template from the source repo and download any extra data, eg warps
+COPY template /opt/template
+# Get MNI152 to template warp
+RUN wget --directory-prefix /opt/template/MNI152NLin2009cAsym \
+    --content-disposition https://ndownloader.figshare.com/files/26136116 2>/dev/null
+
 FROM ubuntu:bionic-20200713
 COPY --from=builder /opt/ants /opt/ants
+COPY --from=builder /opt/template /opt/template
 COPY --from=pyushkevich/itksnap:latest /usr/local/bin/c3d /opt/bin/c3d
 
 RUN apt-get update \
-    && apt install -y --no-install-recommends zlib1g-dev \
     && apt install -y --no-install-recommends zlib1g-dev \
     && apt install -y python3.7 python-pip \
     && pip install setuptools \
@@ -58,14 +64,12 @@ COPY runAntsCT_nonBIDS.pl /opt/scripts/runAntsCT_nonBIDS.pl
 COPY trim_neck.sh /opt/scripts/trim_neck.sh
 # BIDS script when it's ready to use 
 # COPY runANTsCT.py /opt/scripts/runANTsCT.py
-COPY template /opt/template
-# Get MNI152 to template warp
-RUN wget --directory-prefix /opt/template/MNI152NLin2009cAsym --content-disposition https://ndownloader.figshare.com/files/26136116
+
 RUN chmod a+x /opt/scripts/*
 
 WORKDIR /data
 
-# Default entrypoint will be for BIDS 
+# Eventually the default entrypoint will be for BIDS data 
 # User can override for legacy compatibility
 #
 # ENTRYPOINT ["/opt/scripts/runANTsCT.py"]
