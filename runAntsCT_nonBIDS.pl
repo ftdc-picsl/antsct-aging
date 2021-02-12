@@ -137,7 +137,7 @@ GetOptions("anatomical-image=s" => \$anatomicalImage,
 	   "output-dir=s" => \$outputDir,
 	   "output-file-root=s" => \$outputFileRoot,
            "run-quick=i" => \$runQuick,
-	   "trim-neck-mode-=s" => \$trimNeckMode
+	   "trim-neck-mode=s" => \$trimNeckMode
           )
     or die("Error in command line arguments\n");
 
