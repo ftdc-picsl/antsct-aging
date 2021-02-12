@@ -3,12 +3,20 @@
 ANTs cortical thickness pipeline container, contains a template for older
 individuals. 
 
-By default, the `trim_neck.sh` script is called to crop the FOV of the images.
+By default, the `trim_neck.sh` script is called to mask out the neck region,
+users may optionally crop out the neck or proceed with the unaltered input
+image.
 
 The template is provided by Nick Tustison.
 
 Cortical labels are warped to the subject space after processing, label
 information and definitions are under template/labels.
+
+A warp between the internal template and the MNI152NLin2009cAsym template is
+downloaded at build time and included in the container. This is used to warp
+labels from MNI152NLin2009cAsym space to subject space through the internal
+template. Users may additionally specify their own labels in the
+MNI152NLin2009cAsym space.
 
 
 ## Container images
@@ -36,6 +44,9 @@ The trim_neck.sh is provided by Paul Yushkevich and Sandhitsu Das, and uses
 
 Please see the individual label directories under the template directory for
 label information including citations and licensing terms.
+
+Custom labels defined at run time must be aligned to the MNI152NLin2009cAsym
+template in templateflow v1.4.1.
 
 
 ## References
