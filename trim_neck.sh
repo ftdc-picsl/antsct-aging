@@ -7,12 +7,16 @@
 if [[ $# -lt 1 || $1 == "-h" || $1 == "-help" || $1 == "--help" ]]; then
   cat <<USAGETEXT
   trim_neck: Brain MRI neck removal tool
+
+  Script by Paul Yushkevich and Sandhitsu Das. Modified by Philip Cook
+
   usage:
     trim_neck [options] input_image output_image
   options:
     -l <mm>        : Length (sup-inf) of the head that should be captured [180].
     -c <mm>        : Clearance above head that should be captured [10].
-    -m <file>      : Location to save mask used for the computation.
+    -m <file>      : Location to save mask used for computing trimmed region.
+    -r             : Output replaces trimmed region with zeros, rather than cropping input.
     -w <dir>       : Location to store intermediate files. Default: [$TMPDIR]
     -d             : Verbose/debug mode
 USAGETEXT
@@ -22,15 +26,16 @@ fi
 # Default parameter values
 HEADLEN=180
 CLEARANCE=10
-unset WORKINGDIR MASKOUT DEBUG
+unset WORKINGDIR MASKOUT MASKTRIM DEBUG
 
 # Read the options
-while getopts "l:c:m:w:d" opt; do
+while getopts "l:c:m:w:dr" opt; do
   case $opt in
 
     l) HEADLEN=$OPTARG;;
     c) CLEARANCE=$OPTARG;;
     m) MASKOUT=$OPTARG;;
+    r) MASKTRIM=1;;
     w) WORKINGDIR=$OPTARG;;
     d) DEBUG=1;;
     \?) echo "Unknown option $OPTARG"; exit 2;;
@@ -127,9 +132,17 @@ c3d $VERBOSE $MASK \
   -dilate 1 ${DIMX}x${DIMY}x0vox -trim 0x0x${TRIM}vox \
   -region $REGCMD -thresh -inf inf 1 0 -o $SLAB -popas S \
   $SOURCE -as I -int 0 -push S -reslice-identity -trim 0vox -as SS -o $WORKINGDIR/slab_src.nii.gz \
-  -push I -reslice-identity -o $TARGET  
+  -push I -reslice-identity -o ${WORKINGDIR}/trimmed_input.nii.gz
 
-# If mask requested, reslice mask to target space
-if [[ $MASKOUT ]]; then
-  c3d $SOURCE $LEVELSET -reslice-identity -thresh 0 inf 1 0 -o $MASKOUT/mask.nii.gz
+if [[ $MASKTRIM ]]; then
+  c3d $SOURCE -as I ${WORKINGDIR}/trimmed_input.nii.gz -thresh 0 0 1 1 -reslice-identity \
+    -thresh 0.1 inf 1 0 -popas M -push I -push M -multiply -o $TARGET
+else
+  cp ${WORKINGDIR}/trimmed_input.nii.gz $TARGET
 fi
+
+# If mask requested, reslice mask to source space
+if [[ -n $MASKOUT ]]; then
+  c3d $SOURCE $LEVELSET -reslice-identity -thresh 0 inf 1 0 -o $MASKOUT
+fi
+

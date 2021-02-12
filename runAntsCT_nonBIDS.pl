@@ -16,7 +16,7 @@ use Getopt::Long;
 my $denoise = 1;
 my $numThreads = 1;
 my $runQuick = 0;
-my $trimNeck = 1;
+my $trimNeckMode = "mask";
 my $outputFileRoot = "";
 
 my $usage = qq{
@@ -28,7 +28,7 @@ my $usage = qq{
 
 
   Runs antsCorticalThickness.sh on an anatomical image (usually T1w). trim_neck.sh is called first, then the trimmed data 
-  is passed to antsCorticalThickness.sh unless --trim-neck 0 is passed.
+  is passed to antsCorticalThickness.sh unless "--trim-neck-mode none" is passed.
 
   The built-in template and priors are used to compute thickness. Several built-in label sets are warped to the anatomical 
   space automatically. Cortical labels are propagated to the mask defined by thickness > 0:
@@ -80,8 +80,16 @@ my $usage = qq{
    --run-quick
      1 to use quick resgistration, 0 to use the default (default = ${runQuick}).
 
-   --trim-neck 
-     1 to run the trim_neck.sh script, 0 to use the raw data (default = ${trimNeck}).
+   --trim-neck-mode
+     Controls how neck trimming is performed, if at all (default = $trimNeckMode). Either
+     
+     crop : Crop image to remove neck. This reduces the size of the T1w image input to the cortical
+            thickness pipeline.
+
+     mask : Mask image to remove neck. This sets the neck region to 0, but does not change the 
+            dimensions of the input image, so the output shares the same voxel space. 
+
+     none : No neck trimming is performed.
 
   Output:
    Output is organized under the specified output directory.
@@ -122,14 +130,14 @@ my $templateRegMask = "${templateDir}/T_template0_BrainCerebellumRegistrationMas
 my $templatePriorSpec = "${templateDir}/priors/priors%d.nii.gz";
 
 GetOptions("anatomical-image=s" => \$anatomicalImage,
-            "denoise=i" => \$denoise,
-            "mni-cortical-labels=s{1,}" => \@userMNICorticalLabels,
-            "mni-labels=s{1,}" => \@userMNILabels,
-            "num-threads=i" => \$numThreads,
-	        "output-dir=s" => \$outputDir,
-	        "output-file-root=s" => \$outputFileRoot,
-            "run-quick=i" => \$runQuick,
-	        "trim-neck=i" => \$trimNeck
+           "denoise=i" => \$denoise,
+           "mni-cortical-labels=s{1,}" => \@userMNICorticalLabels,
+           "mni-labels=s{1,}" => \@userMNILabels,
+           "num-threads=i" => \$numThreads,
+	   "output-dir=s" => \$outputDir,
+	   "output-file-root=s" => \$outputFileRoot,
+           "run-quick=i" => \$runQuick,
+	   "trim-neck-mode-=s" => \$trimNeckMode
           )
     or die("Error in command line arguments\n");
 
@@ -153,14 +161,25 @@ system("${antsPath}antsRegistration --version > ${outputRoot}antsVersionInfo.txt
 
 my $antsInputImage = $anatomicalImage;
 
-if ($trimNeck) {
+$trimNeckMode = lc($trimNeckMode);
+
+if (($trimNeckMode eq "crop") || ($trimNeckMode eq "mask")) {
     my $trimmedImage = "${outputRoot}NeckTrim.nii.gz";
-   
+  
+    my $trimNeckOpts = "-d";
+
+    if ($trimNeckMode eq "mask") {
+        $trimNeckOpts = $trimNeckOpts . " -r ";
+    }
+  
     if (!-f $trimmedImage) {
-        system("trim_neck.sh -d $anatomicalImage $trimmedImage > ${outputRoot}TrimNeckOutput.txt") == 0 
+        system("trim_neck.sh $trimNeckOpts $anatomicalImage $trimmedImage > ${outputRoot}TrimNeckOutput.txt") == 0 
           or die("Neck trimming exited with nonzero status");
     }
     $antsInputImage = $trimmedImage;
+}
+elsif (!($trimNeckMode eq "none")) {
+    die("Unrecognized neck trim option $trimNeckMode");	
 }
 
 print "Running antsCorticalThickness.sh\n";
