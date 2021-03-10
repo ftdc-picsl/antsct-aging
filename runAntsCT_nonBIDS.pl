@@ -15,6 +15,7 @@ use Getopt::Long;
 # Options with defaults
 my $denoise = 1;
 my $numThreads = 1;
+my $padMM = 10;
 my $runQuick = 0;
 my $trimNeckMode = "crop";
 my $outputFileRoot = "";
@@ -76,6 +77,9 @@ my $usage = qq{
    --num-threads
      Maximum number of CPU threads to use. Set to 0 to use as many threads as there are cores (default = ${numThreads}).
 
+   --pad-input
+     Pad input image with this amount (mm). This padding is applied after neck trimming (default = ${padMM}).
+
    --run-quick
      1 to use quick resgistration, 0 to use the default (default = ${runQuick}).
 
@@ -133,10 +137,11 @@ GetOptions("anatomical-image=s" => \$anatomicalImage,
            "mni-cortical-labels=s{1,}" => \@userMNICorticalLabels,
            "mni-labels=s{1,}" => \@userMNILabels,
            "num-threads=i" => \$numThreads,
-	   "output-dir=s" => \$outputDir,
-	   "output-file-root=s" => \$outputFileRoot,
+           "output-dir=s" => \$outputDir,
+           "output-file-root=s" => \$outputFileRoot,
+           "pad-input=i" => \$padMM,
            "run-quick=i" => \$runQuick,
-	   "trim-neck-mode=s" => \$trimNeckMode
+           "trim-neck-mode=s" => \$trimNeckMode
           )
     or die("Error in command line arguments\n");
 
@@ -158,28 +163,32 @@ my $outputRoot = "${outputDir}/${outputFileRoot}";
 # Write some version information to the output directory
 system("${antsPath}antsRegistration --version > ${outputRoot}antsVersionInfo.txt");
 
-my $antsInputImage = $anatomicalImage;
+my $antsInputImage = "${outputRoot}PreprocessedInput.nii.gz";
 
 $trimNeckMode = lc($trimNeckMode);
 
 if (($trimNeckMode eq "crop") || ($trimNeckMode eq "mask")) {
-    my $trimmedImage = "${outputRoot}NeckTrim.nii.gz";
-  
-    my $trimNeckOpts = "-d -c 20 -m ${outputRoot}NeckTrimMask.nii.gz";
+    my $trimNeckOpts = "-d -c 10 -m ${outputRoot}NeckTrimMask.nii.gz";
 
     if ($trimNeckMode eq "mask") {
         $trimNeckOpts = $trimNeckOpts . " -r ";
     }
-  
-    if (! -f $trimmedImage) {
-        system("trim_neck.sh $trimNeckOpts $anatomicalImage $trimmedImage > ${outputRoot}TrimNeckOutput.txt") == 0 
-          or die("Neck trimming exited with nonzero status");
-    }
 
-    $antsInputImage = $trimmedImage;
+    system("trim_neck.sh $trimNeckOpts $anatomicalImage $antsInputImage > ${outputRoot}TrimNeckOutput.txt") == 0 
+      or die("Neck trimming exited with nonzero status");
 }
-elsif (!($trimNeckMode eq "none")) {
+elsif ($trimNeckMode eq "none") {
+    system("cp $anatomicalImage $antsInputImage") == 0 or die("Cannot create preprocessed anatomical image");
+}
+else {
     die("Unrecognized neck trim option $trimNeckMode");	
+}
+
+# pad image
+if (${padMM} > 0) {
+    print "Padding input image by ${padMM}mm\n";
+    system("c3d $antsInputImage -pad ${padMM}x${padMM}x${padMM}mm ${padMM}x${padMM}x${padMM}mm 0 -o $antsInputImage") == 0
+      or die("Cannot pad input image");
 }
 
 print "Running antsCorticalThickness.sh\n";

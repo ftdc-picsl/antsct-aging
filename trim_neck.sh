@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 # ------------------------------------
 # Trim whitespace and lower resolution
 # ------------------------------------
@@ -142,7 +142,7 @@ c3d $SOURCE -as I ${WORKINGDIR}/trimmed_input.nii.gz -thresh 0 0 1 1 -reslice-id
     -thresh 0.5 inf 1 0 -o ${TRIMREGIONMASK}
 
 if [[ $MASKTRIM ]]; then
-   c3d $SOURCE $TRIMREGIONMASK -multiply -o $TARGET
+  c3d $SOURCE $TRIMREGIONMASK -multiply -o $TARGET
 else
   c3d ${WORKINGDIR}/trimmed_input.nii.gz -o $TARGET
 fi
