@@ -16,7 +16,7 @@ use Getopt::Long;
 my $denoise = 1;
 my $numThreads = 1;
 my $runQuick = 0;
-my $trimNeckMode = "mask";
+my $trimNeckMode = "crop";
 my $outputFileRoot = "";
 
 my $usage = qq{
@@ -74,8 +74,7 @@ my $usage = qq{
      One or more generic label images in the MNI152NLin2009cAsym space, to be warped to the subject space.
 
    --num-threads
-     Maximum number of CPU threads to use. Set to 0 to use as many threads as there are cores 
-     (default = ${numThreads}).
+     Maximum number of CPU threads to use. Set to 0 to use as many threads as there are cores (default = ${numThreads}).
 
    --run-quick
      1 to use quick resgistration, 0 to use the default (default = ${runQuick}).
@@ -166,16 +165,17 @@ $trimNeckMode = lc($trimNeckMode);
 if (($trimNeckMode eq "crop") || ($trimNeckMode eq "mask")) {
     my $trimmedImage = "${outputRoot}NeckTrim.nii.gz";
   
-    my $trimNeckOpts = "-d";
+    my $trimNeckOpts = "-d -c 20 -m ${outputRoot}NeckTrimMask.nii.gz";
 
     if ($trimNeckMode eq "mask") {
         $trimNeckOpts = $trimNeckOpts . " -r ";
     }
   
-    if (!-f $trimmedImage) {
+    if (! -f $trimmedImage) {
         system("trim_neck.sh $trimNeckOpts $anatomicalImage $trimmedImage > ${outputRoot}TrimNeckOutput.txt") == 0 
           or die("Neck trimming exited with nonzero status");
     }
+
     $antsInputImage = $trimmedImage;
 }
 elsif (!($trimNeckMode eq "none")) {

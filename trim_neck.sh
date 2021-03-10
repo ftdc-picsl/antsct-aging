@@ -10,12 +10,13 @@ if [[ $# -lt 1 || $1 == "-h" || $1 == "-help" || $1 == "--help" ]]; then
 
   Script by Paul Yushkevich and Sandhitsu Das. Modified by Philip Cook
 
-  usage:
+  Usage:
     trim_neck [options] input_image output_image
-  options:
+
+  Options:
     -l <mm>        : Length (sup-inf) of the head that should be captured [180].
     -c <mm>        : Clearance above head that should be captured [10].
-    -m <file>      : Location to save mask used for computing trimmed region.
+    -m <file>      : Location to save mask indicating trimmed region.
     -r             : Output replaces trimmed region with zeros, rather than cropping input.
     -w <dir>       : Location to store intermediate files. Default: [$TMPDIR]
     -d             : Verbose/debug mode
@@ -134,15 +135,20 @@ c3d $VERBOSE $MASK \
   $SOURCE -as I -int 0 -push S -reslice-identity -trim 0vox -as SS -o $WORKINGDIR/slab_src.nii.gz \
   -push I -reslice-identity -o ${WORKINGDIR}/trimmed_input.nii.gz
 
+TRIMREGIONMASK="${WORKINGDIR}/trim_mask.nii.gz"
+
+# Make the mask
+c3d $SOURCE -as I ${WORKINGDIR}/trimmed_input.nii.gz -thresh 0 0 1 1 -reslice-identity \
+    -thresh 0.5 inf 1 0 -o ${TRIMREGIONMASK}
+
 if [[ $MASKTRIM ]]; then
-  c3d $SOURCE -as I ${WORKINGDIR}/trimmed_input.nii.gz -thresh 0 0 1 1 -reslice-identity \
-    -thresh 0.1 inf 1 0 -popas M -push I -push M -multiply -o $TARGET
+   c3d $SOURCE $TRIMREGIONMASK -multiply -o $TARGET
 else
-  cp ${WORKINGDIR}/trimmed_input.nii.gz $TARGET
+  c3d ${WORKINGDIR}/trimmed_input.nii.gz -o $TARGET
 fi
 
 # If mask requested, reslice mask to source space
 if [[ -n $MASKOUT ]]; then
-  c3d $SOURCE $LEVELSET -reslice-identity -thresh 0 inf 1 0 -o $MASKOUT
+  c3d $TRIMREGIONMASK -o $MASKOUT
 fi
 

@@ -3,9 +3,9 @@
 ANTs cortical thickness pipeline container, contains a template for older
 individuals. 
 
-By default, the `trim_neck.sh` script is called to mask out the neck region,
-users may optionally crop out the neck or proceed with the unaltered input
-image.
+By default, the `trim_neck.sh` script is called to crop the input image to
+remove the neck region, users may optionally mask the neck region with zeros, or
+proceed with the unaltered input image.
 
 The template is provided by Nick Tustison.
 
