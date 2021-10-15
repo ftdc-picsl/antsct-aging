@@ -11,7 +11,8 @@ RUN apt-get update && \
                     wget \
                     ninja-build \
                     git \
-                    zlib1g-dev
+                    zlib1g-dev \
+                    bc
 
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null \
     | apt-key add - \
