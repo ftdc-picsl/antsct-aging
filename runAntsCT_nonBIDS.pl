@@ -157,7 +157,10 @@ my $useRandomSeeding = 1;
 
 if ($reproMode > 0) {
     print "Reproducibility mode enabled, setting ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1 and disabling random sampling\n";
-    $ENV{'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS'}=1;
+    $ENV{'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS'} = 1;
+    # Need this to fix the seed for registration
+    $ENV{'ANTS_RANDOM_SEED'} = 362321;
+    # Pass this to the script to fix Atropos seed
     $useRandomSeeding = 0;
 }
 elsif ($numThreads == 0) {
