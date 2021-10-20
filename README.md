@@ -1,7 +1,7 @@
 # antsct-aging
 
 ANTs cortical thickness pipeline container, contains a template for older
-individuals. 
+individuals.
 
 By default, the `trim_neck.sh` script is called to crop the input image to
 remove the neck region, users may optionally mask the neck region with zeros, or
@@ -23,7 +23,7 @@ MNI152NLin2009cAsym space.
 
 Download Docker images from [DockerHub](https://hub.docker.com/repository/docker/cookpa/antsct-aging/general).
 
-To build a Singularity image, 
+To build a Singularity image,
 
 ```
 sudo singularity build antsct-aging-tag.sif docker://cookpa/antsct-aging:tag

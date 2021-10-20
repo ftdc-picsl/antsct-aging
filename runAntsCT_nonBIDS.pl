@@ -16,34 +16,35 @@ use Getopt::Long;
 my $denoise = 1;
 my $numThreads = 1;
 my $padMM = 10;
+my $reproMode = 0;
 my $runQuick = 0;
 my $trimNeckMode = "crop";
 my $outputFileRoot = "";
 
 my $usage = qq{
-  $0  
-      --anatomical-image 
-      --output-dir 
-      --output-file-root 
+  $0
+      --anatomical-image
+      --output-dir
+      --output-file-root
       [ options ]
 
 
-  Runs antsCorticalThickness.sh on an anatomical image (usually T1w). trim_neck.sh is called first, then the trimmed data 
+  Runs antsCorticalThickness.sh on an anatomical image (usually T1w). trim_neck.sh is called first, then the trimmed data
   is passed to antsCorticalThickness.sh unless "--trim-neck-mode none" is passed.
 
-  The built-in template and priors are used to compute thickness. Several built-in label sets are warped to the anatomical 
+  The built-in template and priors are used to compute thickness. Several built-in label sets are warped to the anatomical
   space automatically. Cortical labels are propagated to the mask defined by thickness > 0:
-    
+
     DKT31, the Desikan-Killiany-Tourville parcellation from Mindboggle
-    
-    Lausanne, subdivisions of the DKT31 labels to finer scales of (60, 125, 250) parcels 
-    
-    Schaefer, the Schaefer et al 2018 functional cortical parcellation, copied from templateflow 
+
+    Lausanne, subdivisions of the DKT31 labels to finer scales of (60, 125, 250) parcels
+
+    Schaefer, the Schaefer et al 2018 functional cortical parcellation, copied from templateflow
     (7 and 17 networks) x (100, 200, 300, 400, 500) parcels.
 
 
   Subcortical labels are warped to the subject anatomical space, but not processed further:
-    
+
     BrainCOLOR, labels from Neuromorphometrics for the MICCAI 2012 segmentation challenge.
 
   Please see the README files in the container source repository for informations and citations.
@@ -59,16 +60,16 @@ my $usage = qq{
      Output directory.
 
    --output-file-root
-     Prepended onto output files. A sensible value of this would be "\${subject}_\${session}_" 
+     Prepended onto output files. A sensible value of this would be "\${subject}_\${session}_"
      (default = "${outputFileRoot}\").
 
   Options:
 
    --denoise
      Run denoising within the ACT pipeline (default = ${denoise}).
-  
+
    --mni-cortical-labels
-     One or more cortical label images in the MNI152NLin2009cAsym space, to be propagated to the 
+     One or more cortical label images in the MNI152NLin2009cAsym space, to be propagated to the
      subject's cortical mask. Use this option if the label set contains only cortical labels.
 
    --mni-labels
@@ -80,17 +81,21 @@ my $usage = qq{
    --pad-input
      Pad input image with this amount (mm). This padding is applied after neck trimming (default = ${padMM}).
 
+   --repro-mode
+     If 1, disable multi-threading and all random sampling, which should provide reproducible results
+     between runs. This is useful for testing, but slower if multiple cores are available (default = $reproMode).
+
    --run-quick
-     1 to use quick resgistration, 0 to use the default (default = ${runQuick}).
+     1 to use quick registration, good for testing but results will be suboptimal (default = ${runQuick}).
 
    --trim-neck-mode
      Controls how neck trimming is performed, if at all (default = $trimNeckMode). Either
-     
+
      crop : Crop image to remove neck. This reduces the size of the T1w image input to the cortical
             thickness pipeline.
 
-     mask : Mask image to remove neck. This sets the neck region to 0, but does not change the 
-            dimensions of the input image, so the output shares the same voxel space. 
+     mask : Mask image to remove neck. This sets the neck region to 0, but does not change the
+            dimensions of the input image, so the output shares the same voxel space.
 
      none : No neck trimming is performed.
 
@@ -140,6 +145,7 @@ GetOptions("anatomical-image=s" => \$anatomicalImage,
            "output-dir=s" => \$outputDir,
            "output-file-root=s" => \$outputFileRoot,
            "pad-input=i" => \$padMM,
+           "repro-mode=i" => \$reproMode,
            "run-quick=i" => \$runQuick,
            "trim-neck-mode=s" => \$trimNeckMode
           )
@@ -147,7 +153,14 @@ GetOptions("anatomical-image=s" => \$anatomicalImage,
 
 (-f $anatomicalImage) or die "\nCannot find anatomical image: $anatomicalImage\n";
 
-if ($numThreads == 0) {
+my $useRandomSeeding = 1;
+
+if ($reproMode > 0) {
+    print "Reproducibility mode enabled, setting ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1 and disabling random sampling\n";
+    $ENV{'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS'}=1;
+    $useRandomSeeding = 0;
+}
+elsif ($numThreads == 0) {
     print "Maximum number of threads not set. Not setting ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS\n";
 }
 else {
@@ -174,14 +187,14 @@ if (($trimNeckMode eq "crop") || ($trimNeckMode eq "mask")) {
         $trimNeckOpts = $trimNeckOpts . " -r ";
     }
 
-    system("trim_neck.sh $trimNeckOpts $anatomicalImage $antsInputImage > ${outputRoot}TrimNeckOutput.txt") == 0 
+    system("trim_neck.sh $trimNeckOpts $anatomicalImage $antsInputImage > ${outputRoot}TrimNeckOutput.txt") == 0
       or die("Neck trimming exited with nonzero status");
 }
 elsif ($trimNeckMode eq "none") {
     system("cp $anatomicalImage $antsInputImage") == 0 or die("Cannot create preprocessed anatomical image");
 }
 else {
-    die("Unrecognized neck trim option $trimNeckMode");	
+    die("Unrecognized neck trim option $trimNeckMode");
 }
 
 # pad image
@@ -205,6 +218,7 @@ my $antsCTCmd = "${antsPath}antsCorticalThickness.sh \\
    -m ${templateMask} \\
    -f ${templateRegMask} \\
    -p ${templatePriorSpec} \\
+   -u ${useRandomSeeding} \\
    -a ${antsInputImage} >> ${outputRoot}antsCorticalThicknessOutput.txt 2>&1";
 
 my $antsExit = system($antsCTCmd);
@@ -233,8 +247,8 @@ my @schaeferNetworks = (7, 17);
 
 foreach my $net (@schaeferNetworks) {
     foreach my $scale (@schaeferScales) {
-        propagateCorticalLabelsToNativeSpace($corticalMask, 
-        "${templateDir}/MNI152NLin2009cAsym/tpl-MNI152NLin2009cAsym_res-01_atlas-Schaefer2018_desc-${scale}Parcels${net}Networks_dseg.nii.gz", 
+        propagateCorticalLabelsToNativeSpace($corticalMask,
+        "${templateDir}/MNI152NLin2009cAsym/tpl-MNI152NLin2009cAsym_res-01_atlas-Schaefer2018_desc-${scale}Parcels${net}Networks_dseg.nii.gz",
         1, $outputRoot, "Schaefer2018_${scale}Parcels${net}Networks");
     }
 }
@@ -242,7 +256,7 @@ foreach my $net (@schaeferNetworks) {
 # Subcortical brainCOLOR labels
 warpLabelsToNativeSpace("${templateDir}/labels/BrainCOLOR/BrainCOLORSubcortical.nii.gz", 0, $outputRoot, "BrainColorSubcortical");
 
-# warp user-defined labels 
+# warp user-defined labels
 my @userImageSuffixes = (".nii", ".nii.gz");
 
 foreach my $userMNICorticalLabelImage (@userMNICorticalLabels) {
@@ -312,7 +326,7 @@ sub propagateCorticalLabelsToNativeSpace {
 #       outputRoot - output root for antsCT. Used to find warps and name output
 #       outputLabelName - added to output root, eg "DKT31"
 #
-# warpLabelsToNativeSpace($labelImage, $mniSpace, $outputRoot, $outputLabelName) 
+# warpLabelsToNativeSpace($labelImage, $mniSpace, $outputRoot, $outputLabelName)
 #
 #
 sub warpLabelsToNativeSpace {
@@ -335,5 +349,5 @@ sub warpLabelsToNativeSpace {
       -i $labelImage \\
       -o ${outputRoot}${outputLabelName}.nii.gz";
 
-    (system($warpCmd) == 0) or die("Could not warp labels $labelImage to subject space");   
+    (system($warpCmd) == 0) or die("Could not warp labels $labelImage to subject space");
 }
