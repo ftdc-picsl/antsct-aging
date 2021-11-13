@@ -14,6 +14,7 @@ use Getopt::Long;
 
 # Options with defaults
 my $denoise = 1;
+my $keepTmp = 0;
 my $numThreads = 1;
 my $padMM = 10;
 my $reproMode = 0;
@@ -67,6 +68,9 @@ my $usage = qq{
 
    --denoise
      Run denoising within the ACT pipeline (default = ${denoise}).
+
+   --keep-files
+     Retain all temporary files in the ACT pipeline (default = ${keepTmp}).
 
    --mni-cortical-labels
      One or more cortical label images in the MNI152NLin2009cAsym space, to be propagated to the
@@ -139,6 +143,7 @@ my $templatePriorSpec = "${templateDir}/priors/priors%d.nii.gz";
 
 GetOptions("anatomical-image=s" => \$anatomicalImage,
            "denoise=i" => \$denoise,
+           "keep-files=i" => \$keepTmp,
            "mni-cortical-labels=s{1,}" => \@userMNICorticalLabels,
            "mni-labels=s{1,}" => \@userMNILabels,
            "num-threads=i" => \$numThreads,
@@ -215,6 +220,7 @@ my $antsCTCmd = "${antsPath}antsCorticalThickness.sh \\
    -o ${outputRoot} \\
    -g ${denoise} \\
    -q ${runQuick} \\
+   -k ${keepTmp} \\
    -x 25 \\
    -t ${registrationTemplate} \\
    -e ${extractionTemplate} \\
@@ -223,6 +229,11 @@ my $antsCTCmd = "${antsPath}antsCorticalThickness.sh \\
    -p ${templatePriorSpec} \\
    -u ${useRandomSeeding} \\
    -a ${antsInputImage} >> ${outputRoot}antsCorticalThicknessOutput.txt 2>&1";
+
+# Log ACT command
+open(my $fh, ">", "${outputRoot}antsCorticalThicknessCmd.sh");
+print $fh $antsCTCmd;
+close($fh);
 
 my $antsExit = system($antsCTCmd);
 
