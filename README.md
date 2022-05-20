@@ -1,7 +1,7 @@
 # antsct-aging
 
 [![Docker
-Pulls](https://img.shields.io/docker/pulls/ftdc-picsl/antsct-aging.svg)](https://hub.docker.com/repository/docker/cookpa/antsct-aging)
+Pulls](https://img.shields.io/docker/pulls/cookpa/antsct-aging.svg)](https://hub.docker.com/repository/docker/cookpa/antsct-aging)
 
 ANTs cortical thickness pipeline container, contains a template for older
 individuals.
