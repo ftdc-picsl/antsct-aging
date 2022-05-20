@@ -50,7 +50,7 @@ COPY --from=builder /opt/template /opt/template
 COPY --from=pyushkevich/itksnap:latest /usr/local/bin/c3d /opt/bin/c3d
 
 RUN apt-get update \
-    && apt install -y --no-install-recommends zlib1g-dev \
+    && apt install -y --no-install-recommends bc zlib1g-dev \
     && apt install -y python3.7 python-pip \
     && pip install setuptools \
     && pip install pybids \
