@@ -13,6 +13,7 @@ use Getopt::Long;
 
 
 # Options with defaults
+my $antsCTStage = 0;
 my $denoise = 1;
 my $keepTmp = 0;
 my $numThreads = 1;
@@ -65,6 +66,19 @@ my $usage = qq{
      (default = "${outputFileRoot}\").
 
   Options:
+
+   --antsct-stage
+     Run a particular stage of the ACT pipeline:
+
+        0: all stages
+        1: brain extraction
+        2: template registration
+        3: tissue segmentation
+        4: template registration (improved)
+        5: DiReCT cortical thickness
+        6: qc, quality control and summary measurements
+
+     (default = ${antsCTStage}).
 
    --denoise
      Run denoising within the ACT pipeline (default = ${denoise}).
@@ -142,6 +156,7 @@ my $templateRegMask = "${templateDir}/T_template0_BrainCerebellumRegistrationMas
 my $templatePriorSpec = "${templateDir}/priors/priors%d.nii.gz";
 
 GetOptions("anatomical-image=s" => \$anatomicalImage,
+           "antsct-stage" => \$antsCTStage,
            "denoise=i" => \$denoise,
            "keep-files=i" => \$keepTmp,
            "mni-cortical-labels=s{1,}" => \@userMNICorticalLabels,
@@ -182,7 +197,11 @@ if (! -d $outputDir) {
 my $outputRoot = "${outputDir}/${outputFileRoot}";
 
 # Write some version information to the output directory
-system("${antsPath}antsRegistration --version > ${outputRoot}antsVersionInfo.txt");
+my $runTimestamp = `date`;
+chomp($runTimestamp);
+
+system("echo \"antsct-aging run $runTimestamp\" >> ${outputRoot}antsVersionInfo.txt");
+system("${antsPath}antsRegistration --version >> ${outputRoot}antsVersionInfo.txt");
 
 my $antsInputImage = "${outputRoot}PreprocessedInput.nii.gz";
 
@@ -228,14 +247,26 @@ my $antsCTCmd = "${antsPath}antsCorticalThickness.sh \\
    -f ${templateRegMask} \\
    -p ${templatePriorSpec} \\
    -u ${useRandomSeeding} \\
-   -a ${antsInputImage} >> ${outputRoot}antsCorticalThicknessOutput.txt 2>&1";
+   -a ${antsInputImage} \\
+   -y ${antsCTStage} >> ${outputRoot}antsCorticalThicknessOutput.txt 2>&1";
 
 # Log ACT command
-open(my $fh, ">", "${outputRoot}antsCorticalThicknessCmd.sh");
+open(my $fh, ">>", "${outputRoot}antsCorticalThicknessCmd.sh");
+print $fh "\n --- antct-aging run $runTimestamp --- \n";
 print $fh $antsCTCmd;
 close($fh);
 
 my $antsExit = system($antsCTCmd);
+
+if ($antsExit > 0) {
+    die("ants cortical thickness exited with code " . ${antsExit} >> 8);
+}
+
+if (! -f "${outputRoot}TemplateToSubject0Warp.nii.gz") {
+    print "Template warps not found, cannot proceed with label propagation\n";
+    # Exit 0 here, because it should only happen if staged execution was run
+    exit(${antsExit} >> 8);
+}
 
 print "Warping labels to subject space\n";
 
@@ -253,7 +284,8 @@ propagateCorticalLabelsToNativeSpace($corticalMask, "${templateDir}/labels/DKT31
 my @lausanneScales = (33, 60, 125, 250);
 
 foreach my $scale (@lausanneScales) {
-    propagateCorticalLabelsToNativeSpace($corticalMask, "${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz", 0, $outputRoot, "LausanneCorticalScale${scale}");
+    propagateCorticalLabelsToNativeSpace($corticalMask, "${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz",
+                                         0, $outputRoot, "LausanneCorticalScale${scale}");
 }
 
 my @schaeferScales = (100, 200, 300, 400, 500);
@@ -295,7 +327,7 @@ exit($antsExit >> 8);
 #       outputRoot - output root for antsCT. Used to find warps and name output
 #       outputLabelName - added to output root, eg "DKT31"
 #
-# propagateCorticalLabelsToNativeSpace($gmMask, $labelImage, $mniSpace, $outputRoot, $outputLabelName) 
+# propagateCorticalLabelsToNativeSpace($gmMask, $labelImage, $mniSpace, $outputRoot, $outputLabelName)
 #
 # In addition to propagating the labels, make a QC file showing overlap between labels
 # before and after label propagation step.
@@ -324,7 +356,7 @@ sub propagateCorticalLabelsToNativeSpace {
 
     (system($warpCmd) == 0) or die("Could not warp labels $labelImage to subject space");
 
-    (system("${antsPath}ImageMath 3 ${outputRoot}${outputLabelName}.nii.gz PropagateLabelsThroughMask $corticalMask $tmpLabels 8 0")) == 0 
+    (system("${antsPath}ImageMath 3 ${outputRoot}${outputLabelName}.nii.gz PropagateLabelsThroughMask $corticalMask $tmpLabels 8 0")) == 0
           or die("Could not propagate labels $labelImage through cortical mask");
 
     system("${antsPath}LabelOverlapMeasures 3 ${outputRoot}${outputLabelName}.nii.gz $tmpLabels ${outputRoot}${outputLabelName}WarpedVsPropagated.csv");

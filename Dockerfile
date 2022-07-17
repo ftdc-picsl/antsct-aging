@@ -63,14 +63,14 @@ ENV ANTSPATH="/opt/ants/bin/" \
 RUN mkdir -p /opt/scripts
 COPY runAntsCT_nonBIDS.pl /opt/scripts/runAntsCT_nonBIDS.pl
 COPY trim_neck.sh /opt/scripts/trim_neck.sh
-# BIDS script when it's ready to use 
+# BIDS script when it's ready to use
 # COPY runANTsCT.py /opt/scripts/runANTsCT.py
 
 RUN chmod a+x /opt/scripts/*
 
 WORKDIR /data
 
-# Eventually the default entrypoint will be for BIDS data 
+# Eventually the default entrypoint will be for BIDS data
 # User can override for legacy compatibility
 #
 # ENTRYPOINT ["/opt/scripts/runANTsCT.py"]
