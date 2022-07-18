@@ -14,6 +14,8 @@ use Getopt::Long;
 
 # Options with defaults
 my $antsCTStage = 0;
+my $brainMaskMode = "ants";
+my $brainMaskImage = "";
 my $denoise = 1;
 my $keepTmp = 0;
 my $numThreads = 1;
@@ -33,6 +35,8 @@ my $usage = qq{
 
   Runs antsCorticalThickness.sh on an anatomical image (usually T1w). trim_neck.sh is called first, then the trimmed data
   is passed to antsCorticalThickness.sh unless "--trim-neck-mode none" is passed.
+
+  All image inputs should be NIFTI with extension ".nii.gz".
 
   The built-in template and priors are used to compute thickness. Several built-in label sets are warped to the anatomical
   space automatically. Cortical labels are propagated to the mask defined by thickness > 0:
@@ -79,6 +83,17 @@ my $usage = qq{
         6: qc, quality control and summary measurements
 
      (default = ${antsCTStage}).
+
+   --brain-mask-image
+     A binary brain mask for the anatomical input image. Implies `--brain-mask-mode image`. Neck trimming should
+     be set to "mask" or "none". The mask should have the exact same dimensions as the input. The mask will be
+     padded to match the input image if padding is not disabled with `--pad-input 0`.
+
+   --brain-mask-mode
+     Controls how brain masking is performed. Either
+          ants   : antsBrainExtraction.sh
+
+     This option has no effect if a brain mask image is supplied at run time (default = ${brainMaskMode}).
 
    --denoise
      Run denoising within the ACT pipeline (default = ${denoise}).
@@ -156,7 +171,9 @@ my $templateRegMask = "${templateDir}/T_template0_BrainCerebellumRegistrationMas
 my $templatePriorSpec = "${templateDir}/priors/priors%d.nii.gz";
 
 GetOptions("anatomical-image=s" => \$anatomicalImage,
-           "antsct-stage" => \$antsCTStage,
+           "antsct-stage=i" => \$antsCTStage,
+           "brain-mask-image=s" => \$brainMaskImage,
+           "brain-mask-mode=s" => \$brainMaskMode,
            "denoise=i" => \$denoise,
            "keep-files=i" => \$keepTmp,
            "mni-cortical-labels=s{1,}" => \@userMNICorticalLabels,
@@ -205,8 +222,6 @@ system("${antsPath}antsRegistration --version >> ${outputRoot}antsVersionInfo.tx
 
 my $antsInputImage = "${outputRoot}PreprocessedInput.nii.gz";
 
-$trimNeckMode = lc($trimNeckMode);
-
 if (($trimNeckMode eq "crop") || ($trimNeckMode eq "mask")) {
     my $trimNeckOpts = "-d -c 10 -m ${outputRoot}NeckTrimMask.nii.gz";
 
@@ -229,6 +244,28 @@ if (${padMM} > 0) {
     print "Padding input image by ${padMM}mm\n";
     system("c3d $antsInputImage -pad ${padMM}x${padMM}x${padMM}mm ${padMM}x${padMM}x${padMM}mm 0 -o $antsInputImage") == 0
       or die("Cannot pad input image");
+}
+
+# Import or define brain mask outside of antsCT, if requested
+if (-f ${brainMaskImage} ) {
+    print "Using brain mask image $brainMaskImage\n";
+
+    if ($trimNeckMode eq "crop") {
+        die("Neck cannot be cropped when a brain mask image is present");
+    }
+
+    if (${padMM} > 0) {
+        print "Padding input mask by ${padMM}mm\n";
+        system("c3d $brainMaskImage -pad ${padMM}x${padMM}x${padMM}mm ${padMM}x${padMM}x${padMM}mm 0 -o  ${outputRoot}BrainExtractionMask.nii.gz") == 0
+          or die("Cannot pad mask image");
+    }
+    else {
+        system("cp $brainMaskImage ${outputRoot}BrainExtractionMask.nii.gz");
+    }
+}
+elsif (!($brainMaskMode eq "ants")) {
+    # Eventually will have options here to do something else, like antspynet
+    die("Unknown brain mask mode $brainMaskMode");
 }
 
 print "Running antsCorticalThickness.sh\n";
@@ -259,7 +296,7 @@ close($fh);
 my $antsExit = system($antsCTCmd);
 
 if ($antsExit > 0) {
-    die("ants cortical thickness exited with code " . ${antsExit} >> 8);
+    die("ants cortical thickness exited with code " . (${antsExit} >> 8));
 }
 
 if (! -f "${outputRoot}TemplateToSubject0Warp.nii.gz") {
