@@ -20,7 +20,7 @@ ENV ANTSPATH="/opt/ants/bin/" \
     LD_LIBRARY_PATH="/opt/ants/lib:$LD_LIBRARY_PATH"
 
 RUN mkdir -p /opt/scripts
-COPY runAntsCT_nonBIDS.pl /opt/scripts/runAntsCT_nonBIDS.pl
+COPY run*.pl /opt/scripts/
 COPY trim_neck.sh /opt/scripts/trim_neck.sh
 # BIDS script when it's ready to use
 # COPY runANTsCT.py /opt/scripts/runANTsCT.py
@@ -35,4 +35,4 @@ WORKDIR /data
 # ENTRYPOINT ["/opt/scripts/runANTsCT.py"]
 #
 # For now, use a legacy interface
-ENTRYPOINT ["/opt/scripts/runAntsCT_nonBIDS.pl"]
+ENTRYPOINT ["/opt/scripts/run.pl"]
