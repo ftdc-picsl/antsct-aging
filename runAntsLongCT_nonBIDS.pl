@@ -29,8 +29,8 @@ my $usage = qq{
       --output-dir
       [ options ]
 
-  Runs antsCorticalThickness.sh on anatomical images (usually T1w). trim_neck.sh is called first, then the trimmed data
-  is passed to antsLongitudinalCorticalThickness.sh unless "--trim-neck-mode none" is passed. Multiple modalities are not
+  Runs antsLongitudinalCorticalThickness.sh on anatomical images (usually T1w). trim_neck.sh is called first, then the trimmed
+  data is passed to antsLongitudinalCorticalThickness.sh unless "--trim-neck-mode none" is passed. Multiple modalities are not
   supported.
 
   All image inputs should be NIFTI with extension ".nii.gz".

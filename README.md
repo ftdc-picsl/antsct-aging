@@ -52,6 +52,17 @@ Custom labels defined at run time must be aligned to the MNI152NLin2009cAsym
 template in templateflow v1.4.1.
 
 
+## Running the container
+
+```
+# For cross-sectional processing
+docker run --rm -it cookpa/antsct-aging:0.4.1 --help
+
+# For longitudinal processing
+docker run --rm -it cookpa/antsct-aging:0.4.1 --help --longitudinal
+```
+
+
 ## References
 
 For ANTs cortical thickness: [Tustison, et al 2014](http://dx.doi.org/10.1016/j.neuroimage.2014.05.044).
