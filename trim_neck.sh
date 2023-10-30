@@ -103,7 +103,7 @@ c3d $VERBOSE \
   -dup -steig 2.0 4x4x4 \
   -push T1 -dup -scale 0 -lts $WORKINGDIR/landmarks.txt 15 -o $WORKINGDIR/samples.nii.gz \
   -rf-param-patch 1x1x1 -rf-train $WORKINGDIR/myforest.rf -pop -rf-apply $WORKINGDIR/myforest.rf \
-  -o $RFMAP 
+  -o $RFMAP
 
 # Quick level set of the image
 c3d $VERBOSE \

@@ -13,26 +13,25 @@ use Getopt::Long;
 
 
 # Options with defaults
-my $brainMaskImage = "";
 my $denoise = 1;
 my $keepTmp = 0;
 my $numThreads = 1;
 my $padMM = 25; # pad more to reduce SST drift problems
 my $reproMode = 0;
+my $resetOrigin = 1;
 my $runQuick = 0;
 my $trimNeckMode = "crop";
-my $outputFileRoot = "";
 
 my $usage = qq{
   $0
       --anatomical-images
+      --longitudinal
       --output-dir
-      --output-file-root
       [ options ]
 
-
   Runs antsCorticalThickness.sh on anatomical images (usually T1w). trim_neck.sh is called first, then the trimmed data
-  is passed to antsLongitudinalCorticalThickness.sh unless "--trim-neck-mode none" is passed.
+  is passed to antsLongitudinalCorticalThickness.sh unless "--trim-neck-mode none" is passed. Multiple modalities are not
+  supported.
 
   All image inputs should be NIFTI with extension ".nii.gz".
 
@@ -57,15 +56,14 @@ my $usage = qq{
 
   Required args:
 
-   --anatomical-image
+   --anatomical-images
      Anatomical input image(s) from the same subject.
+
+   --longitudinal
+     Required to run the longitudinal pipeline.
 
    --output-dir
      Output directory for this subject.
-
-   --output-file-root
-     Prepended onto output directories. A sensible value of this would be "\${subject}_\${session}_"
-     (default = "${outputFileRoot}\").
 
   Options:
 
@@ -85,16 +83,16 @@ my $usage = qq{
    --num-threads
      Maximum number of CPU threads to use. Set to 0 to use as many threads as there are cores (default = ${numThreads}).
 
-   --reset-origin
-     If 1, use the group template to set the origin of each input image. This prevents unwanted translations in the SST
-     creation.
-
    --pad-input
      Pad input image with this amount (mm). This padding is applied after neck trimming (default = ${padMM}).
 
    --repro-mode
      If 1, disable multi-threading and all random sampling, which should provide reproducible results
      between runs. This is useful for testing, but slower if multiple cores are available (default = $reproMode).
+
+   --reset-origin
+     If 1, set the origin of each image using the group template as a reference. This can stabilize single-subject
+     templates by removing large translations due to different origin positions in the image headers (default = $resetOrigin).
 
    --run-quick
      1 or 2 to use quick(er) registration, good for testing but results will be suboptimal (default = ${runQuick}).
@@ -131,9 +129,12 @@ if (!$antsPath || ! -f "${antsPath}antsRegistration") {
 }
 
 # Required args
-my ($anatomicalImage, $outputDir);
+my (@anatomicalImages, $outputDir);
 
 # Options with no defaults
+
+# Has to be set to 1 or we ran the wrong script
+my $runLongitudinal = 0;
 
 #  Generic MNI label set
 my @userMNILabels = ();
@@ -149,35 +150,40 @@ my $templateMask = "${templateDir}/T_template0_BrainCerebellumProbabilityMask.ni
 my $templateRegMask = "${templateDir}/T_template0_BrainCerebellumRegistrationMask.nii.gz";
 my $templatePriorSpec = "${templateDir}/priors/priors%d.nii.gz";
 
-GetOptions("anatomical-image=s" => \$anatomicalImage,
-           "antsct-stage=i" => \$antsCTStage,
-           "brain-mask-image=s" => \$brainMaskImage,
-           "brain-mask-mode=s" => \$brainMaskMode,
+GetOptions("anatomical-images=s{1,}" => \@anatomicalImages,
            "denoise=i" => \$denoise,
+           "help" => sub { print $usage; exit(0); },
            "keep-files=i" => \$keepTmp,
+           "longitudinal" => \$runLongitudinal,
            "mni-cortical-labels=s{1,}" => \@userMNICorticalLabels,
            "mni-labels=s{1,}" => \@userMNILabels,
            "num-threads=i" => \$numThreads,
            "output-dir=s" => \$outputDir,
-           "output-file-root=s" => \$outputFileRoot,
            "pad-input=i" => \$padMM,
            "repro-mode=i" => \$reproMode,
+           "reset-origin=i" => \$resetOrigin,
            "run-quick=i" => \$runQuick,
            "trim-neck-mode=s" => \$trimNeckMode
           )
     or die("Error in command line arguments\n");
 
-(-f $anatomicalImage) or die "\nCannot find anatomical image: $anatomicalImage\n";
+foreach my $anat (@anatomicalImages) {
+    (-f $anat) or die "\nCannot find anatomical image: $anat\n";
+}
 
-my $useRandomSeeding = 1;
+if (! $runLongitudinal) {
+    die("This script is for longitudinal processing only. Use runAntsCT_nonBIDS.pl for cross-sectional processing");
+}
 
+my $numSessions = scalar(@anatomicalImages);
+
+# Not sure if this really works for longitudinal processing because there's no option to pass it
+# through to downstream scripts. But I think setting the seed + single thread is sufficient
 if ($reproMode > 0) {
     print "Reproducibility mode enabled, setting ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1 and disabling random sampling\n";
     $ENV{'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS'} = 1;
     # Need this to fix the seed for registration
     $ENV{'ANTS_RANDOM_SEED'} = 362321;
-    # Pass this to the script to fix Atropos seed
-    $useRandomSeeding = 0;
 }
 elsif ($numThreads == 0) {
     print "Maximum number of threads not set. Not setting ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS\n";
@@ -190,7 +196,8 @@ if (! -d $outputDir) {
     system("mkdir -p $outputDir") == 0 or die "\nCannot create output directory $outputDir";
 }
 
-my $outputRoot = "${outputDir}/${outputFileRoot}";
+# Just used for logs and other script output, not for ants CT itself
+my $outputRoot = "${outputDir}/antsct-aging-";
 
 # Write some version information to the output directory
 my $runTimestamp = `date`;
@@ -199,56 +206,85 @@ chomp($runTimestamp);
 system("echo \"antsct-aging run $runTimestamp\" >> ${outputRoot}antsVersionInfo.txt");
 system("${antsPath}antsRegistration --version >> ${outputRoot}antsVersionInfo.txt");
 
-my $antsInputImage = "${outputRoot}PreprocessedInput.nii.gz";
+# Place neck trimmed, preprocessed images here
+my $preprocDir = "${outputDir}/preprocInput";
 
-if (($trimNeckMode eq "crop") || ($trimNeckMode eq "mask")) {
-    my $trimNeckOpts = "-d -c 10 -m ${outputRoot}NeckTrimMask.nii.gz";
+if (! -d $preprocDir) {
+    system("mkdir $preprocDir") == 0 or die "\nCannot create output directory $preprocDir";
+}
 
-    if ($trimNeckMode eq "mask") {
-        $trimNeckOpts = $trimNeckOpts . " -r ";
+# Array of preprocessed images input to ALCT.sh
+my @preprocessedInput = ();
+
+foreach my $inputAnatomical (@anatomicalImages) {
+
+    my $preprocFilePrefix = fileparse($inputAnatomical, (".nii", ".nii.gz"));
+
+    my $preprocOutputRoot = "${preprocDir}/${preprocFilePrefix}_";
+
+    my $antsInputImage = "${preprocOutputRoot}Preprocessed.nii.gz";
+
+    if (-f $antsInputImage) {
+        print "Found preprocessed image $antsInputImage, skipping preprocessing\n";
+        push(@preprocessedInput, $antsInputImage);
+        next;
     }
 
-    system("trim_neck.sh $trimNeckOpts $anatomicalImage $antsInputImage > ${outputRoot}TrimNeckOutput.txt") == 0
-      or die("Neck trimming exited with nonzero status");
-}
-elsif ($trimNeckMode eq "none") {
-    system("cp $anatomicalImage $antsInputImage") == 0 or die("Cannot create preprocessed anatomical image");
-}
-else {
-    die("Unrecognized neck trim option $trimNeckMode");
+    if (($trimNeckMode eq "crop") || ($trimNeckMode eq "mask")) {
+        my $trimNeckOpts = "-d -c 10 -m ${preprocOutputRoot}NeckTrimMask.nii.gz";
+
+        if ($trimNeckMode eq "mask") {
+         $trimNeckOpts = $trimNeckOpts . " -r ";
+        }
+
+        system("trim_neck.sh $trimNeckOpts $inputAnatomical $antsInputImage > ${preprocOutputRoot}TrimNeckOutput.txt") == 0
+                or die("Neck trimming exited with nonzero status");
+    }
+    elsif ($trimNeckMode eq "none") {
+        system("cp $inputAnatomical $antsInputImage") == 0 or die("Cannot create preprocessed anatomical image");
+    }
+    else {
+        die("Unrecognized neck trim option $trimNeckMode");
+    }
+
+    # pad image
+    if (${padMM} > 0) {
+        print "Padding input image [ $inputAnatomical ] by ${padMM}mm\n";
+        system("c3d $antsInputImage -pad ${padMM}x${padMM}x${padMM}mm ${padMM}x${padMM}x${padMM}mm 0 -o $antsInputImage") == 0
+            or die("Cannot pad input image");
+    }
+
+    if (${resetOrigin} > 0) {
+        print "Resetting origin of input image [ $inputAnatomical ]\n";
+        resetOrigin($antsInputImage, $extractionTemplate, $templateRegMask);
+    }
+
+    push(@preprocessedInput, $antsInputImage);
 }
 
-# pad image
-if (${padMM} > 0) {
-    print "Padding input image by ${padMM}mm\n";
-    system("c3d $antsInputImage -pad ${padMM}x${padMM}x${padMM}mm ${padMM}x${padMM}x${padMM}mm 0 -o $antsInputImage") == 0
-      or die("Cannot pad input image");
-}
 
-# Reset origin if required
-
-
-print "Running antsCorticalThickness.sh\n";
+print "Running antsLongitudinalCorticalThickness.sh\n";
 
 # run antsCT
-my $antsCTCmd = "${antsPath}antsCorticalThickness.sh \\
+my $inputImageString = join(" ", @preprocessedInput);
+
+my $antsCTCmd = "${antsPath}antsLongitudinalCorticalThickness.sh \\
    -d 3 \\
-   -o ${outputRoot} \\
+   -o ${outputDir}/ \\
    -g ${denoise} \\
    -q ${runQuick} \\
-   -k ${keepTmp} \\
+   -b ${keepTmp} \\
    -x 25 \\
    -t ${registrationTemplate} \\
    -e ${extractionTemplate} \\
    -m ${templateMask} \\
    -f ${templateRegMask} \\
    -p ${templatePriorSpec} \\
-   -u ${useRandomSeeding} \\
-   -a ${antsInputImage} \\
-   -y ${antsCTStage} >> ${outputRoot}antsCorticalThicknessOutput.txt 2>&1";
+   -y 1 \\
+   ${inputImageString} >> ${outputDir}/antsLongitudinalCorticalThicknessOutput.txt 2>&1";
 
 # Log ACT command
-open(my $fh, ">>", "${outputRoot}antsCorticalThicknessCmd.sh");
+open(my $fh, ">>", "${outputRoot}antsLongitudinalCorticalThicknessCmd.sh");
 print $fh "\n --- antct-aging run $runTimestamp --- \n";
 print $fh $antsCTCmd;
 close($fh);
@@ -259,61 +295,159 @@ if ($antsExit > 0) {
     die("ants cortical thickness exited with code " . (${antsExit} >> 8));
 }
 
-if (! -f "${outputRoot}TemplateToSubject0Warp.nii.gz") {
-    print "Template warps not found, cannot proceed with label propagation\n";
-    # Exit 0 here, because it should only happen if staged execution was run
-    exit(${antsExit} >> 8);
+# Each timepoint is output to a separate directory under outputDir
+# Directory name is the basename of the input image in @preprocessedInput, followed by
+# a numeric prefix starting with _0
+my @sessionFilePrefixes = ();
+my @sessionDirs = ();
+
+my $sessionCounter = 0;
+
+foreach my $inputImage (@preprocessedInput) {
+    my $filePrefix = fileparse($inputImage, (".nii", ".nii.gz"));
+    push(@sessionFilePrefixes, $filePrefix);
+    push(@sessionDirs, "${outputDir}/${filePrefix}_${sessionCounter}");
+    $sessionCounter++;
 }
 
-print "Warping labels to subject space\n";
+print "Warping labels to each session space\n";
 
-# Warp Lausanne and DKT31 labels to subject space
+# Warp Lausanne, DKT31, Schaefer labels to subject space
 
 # First get GM mask, which we will define as thickness > 0
 # This incorporates some topology constraints to keep the labels in cortex
-my $corticalMask = "${outputRoot}CorticalMask.nii.gz";
 
-system("${antsPath}ThresholdImage 3 ${outputRoot}CorticalThickness.nii.gz $corticalMask 0.0001 1000");
+for (my $i = 0; $i < $numSessions; $i++) {
+    my $sessionCorticalMask = "${sessionDirs[$i]}/${sessionFilePrefixes[$i]}CorticalMask.nii.gz";
+    my $sessionOutputRoot = "${sessionDirs[$i]}/${sessionFilePrefixes[$i]}";
 
-propagateCorticalLabelsToNativeSpace($corticalMask, "${templateDir}/labels/DKT31/DKT31.nii.gz", 0, $outputRoot, "DKT31");
+    system("${antsPath}ThresholdImage 3 ${sessionOutputRoot}CorticalThickness.nii.gz " .
+            "$sessionCorticalMask 0.0001 1000");
 
-# Scales go up to 250 and even 500, but they take a long time to interpolate
-my @lausanneScales = (33, 60, 125, 250);
+    propagateCorticalLabelsToNativeSpace($sessionCorticalMask, "${templateDir}/labels/DKT31/DKT31.nii.gz", 0,
+                                        $sessionOutputRoot, "DKT31");
 
-foreach my $scale (@lausanneScales) {
-    propagateCorticalLabelsToNativeSpace($corticalMask, "${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz",
-                                         0, $outputRoot, "LausanneCorticalScale${scale}");
-}
+    # Scales go up to 250 and even 500, but they take a long time to interpolate
+    my @lausanneScales = (33, 60, 125, 250);
 
-my @schaeferScales = (100, 200, 300, 400, 500);
-my @schaeferNetworks = (7, 17);
-
-foreach my $net (@schaeferNetworks) {
-    foreach my $scale (@schaeferScales) {
-        propagateCorticalLabelsToNativeSpace($corticalMask,
-        "${templateDir}/MNI152NLin2009cAsym/tpl-MNI152NLin2009cAsym_res-01_atlas-Schaefer2018_desc-${scale}Parcels${net}Networks_dseg.nii.gz",
-        1, $outputRoot, "Schaefer2018_${scale}Parcels${net}Networks");
+    foreach my $scale (@lausanneScales) {
+        propagateCorticalLabelsToNativeSpace($sessionCorticalMask,
+            "${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz", 0, $sessionOutputRoot,
+            "LausanneCorticalScale${scale}");
     }
-}
 
-# Subcortical brainCOLOR labels
-warpLabelsToNativeSpace("${templateDir}/labels/BrainCOLOR/BrainCOLORSubcortical.nii.gz", 0, $outputRoot, "BrainColorSubcortical");
+    # Schaefer labels from MNI space
 
-# warp user-defined labels
-my @userImageSuffixes = (".nii", ".nii.gz");
+    my @schaeferScales = (100, 200, 300, 400, 500);
+    my @schaeferNetworks = (7, 17);
 
-foreach my $userMNICorticalLabelImage (@userMNICorticalLabels) {
-    my $labelName = fileparse($userMNICorticalLabelImage, @userImageSuffixes);
-    propagateCorticalLabelsToNativeSpace($corticalMask, $userMNICorticalLabelImage, 1, $outputRoot, $labelName);
-}
+    foreach my $net (@schaeferNetworks) {
+        foreach my $scale (@schaeferScales) {
+            propagateCorticalLabelsToNativeSpace($sessionCorticalMask,
+            "${templateDir}/MNI152NLin2009cAsym/" .
+            "tpl-MNI152NLin2009cAsym_res-01_atlas-Schaefer2018_desc-${scale}Parcels${net}Networks_dseg.nii.gz",
+            1, $sessionOutputRoot, "Schaefer2018_${scale}Parcels${net}Networks");
+        }
+    }
 
-foreach my $userMNIImage (@userMNILabels) {
-    my $labelName = fileparse($userMNIImage, @userImageSuffixes);
-    warpLabelsToNativeSpace($userMNIImage, 1, $outputRoot, $labelName);
+    # Subcortical brainCOLOR labels
+    warpLabelsToNativeSpace("${templateDir}/labels/BrainCOLOR/BrainCOLORSubcortical.nii.gz", 0, $sessionOutputRoot,
+                            "BrainColorSubcortical");
+    # warp user-defined labels
+    my @userImageSuffixes = (".nii", ".nii.gz");
+
+    foreach my $userMNICorticalLabelImage (@userMNICorticalLabels) {
+        my $labelName = fileparse($userMNICorticalLabelImage, @userImageSuffixes);
+        propagateCorticalLabelsToNativeSpace($sessionCorticalMask, $userMNICorticalLabelImage, 1, $sessionOutputRoot, $labelName);
+    }
+
+    foreach my $userMNIImage (@userMNILabels) {
+        my $labelName = fileparse($userMNIImage, @userImageSuffixes);
+        warpLabelsToNativeSpace($userMNIImage, 1, $sessionOutputRoot, $labelName);
+    }
+
 }
 
 # Pass antsCT exit code back to calling program
 exit($antsExit >> 8);
+
+
+# Reset the origin of an image to match a reference image
+#
+# Since this modifies its input, it should be called on a copy of the image
+# It's best to apply the neck trim first
+#
+# args: inputImage - image to reset origin - note original will be overwritten
+#       referenceImage - image to use as reference
+#       maskImage - mask image to use for registration, in reference image space
+#
+# resetOrigin($inputImage, $referenceImage, $maskImage)
+#
+sub resetOrigin {
+
+    my ($inputImage, $referenceImage, $maskImage) = @_;
+
+    # Quick N4 on the input image
+
+    # use fileparse to get directory and file prefix of input image
+    my ($inputFilePrefix, $preprocDir) = fileparse($inputImage, (".nii", ".nii.gz"));
+
+    my $n4Image = "${preprocDir}/${inputFilePrefix}_N4.nii.gz";
+
+    system("${antsPath}N4BiasFieldCorrection -d 3 -i $inputImage -o $n4Image -b [ 160 ] -c [ 25x25x25, 0.001 ] --verbose") == 0
+        or die("Cannot run N4 on $inputImage");
+
+    my $regPrefix = "${preprocDir}/${inputFilePrefix}_ToReference_";
+
+    # Register input image to reference image using antsRegistrationSyNQuick.sh
+    # use maskImage as a metric mask
+    system("${antsPath}antsRegistrationSyNQuick.sh -d 3 -f $referenceImage -m $n4Image -o $regPrefix -x $maskImage") == 0
+        or die("Cannot register $inputImage to $referenceImage");
+
+    # Write the origin of the reference image to a file, then warp it to the input image space
+    my $refOrigin = "${regPrefix}RefOrigin.csv";
+
+    open($fh, ">", $refOrigin);
+    print $fh "x,y,z,t\n0,0,0,0\n";
+    close($fh);
+
+    # apply the transform to reforigin
+    system("${antsPath}antsApplyTransformsToPoints -d 3 -i $refOrigin -o ${regPrefix}RefOriginInInputSpace.csv " .
+           "-t ${regPrefix}0GenericAffine.mat") == 0
+        or die("Cannot apply transform to reference origin");
+
+    # Read the warped coordinates back in
+    open($fh, "<", "${regPrefix}RefOriginInInputSpace.csv");
+    my $line = <$fh>; # header
+    $line = <$fh>;
+    close($fh);
+
+    chomp($line);
+    my @refCoordsWarped = split(",", $line);
+
+    my $movingOrigin = "${regPrefix}MovingOrigin.txt";
+
+    # Read the origin of the input image
+    system("${antsPath}PrintHeader $inputImage 0 > $movingOrigin") == 0
+        or die("Cannot get origin of $inputImage");
+
+    open($fh, "<", $movingOrigin);
+    $line = <$fh>; # AxBxC
+    close($fh);
+
+    chomp($line);
+    my @movingOrigin = split("x", $line);
+
+    # New origin is the difference between the warped reference origin and the input origin
+    my @newOrigin = ($movingOrigin[0] - $refCoordsWarped[0], $movingOrigin[1] - $refCoordsWarped[1],
+                     $movingOrigin[2] - $refCoordsWarped[2]);
+
+    system("${antsPath}SetOrigin 3 $inputImage $inputImage ${newOrigin[0]} ${newOrigin[1]} ${newOrigin[2]}") == 0
+        or die("Cannot set origin of $inputImage to @newOrigin");
+
+    # Cleanup extra files
+    system("rm -f ${refOrigin} ${regPrefix}RefOriginInInputSpace.csv $movingOrigin $n4Image ${regPrefix}");
+}
 
 
 # Map cortical labels to the subject GM, mask with GM and propagate through GM mask
@@ -321,31 +455,34 @@ exit($antsExit >> 8);
 # args: corticalMask - binary image to label
 #       labelImage - label image in template space, to warp
 #       mniSpace - true if labels are in MNI152 space, false if they are in the local template space
-#       outputRoot - output root for antsCT. Used to find warps and name output
+#       sessionOutputRoot - output root for session processing. Used to find warps and name output
 #       outputLabelName - added to output root, eg "DKT31"
 #
-# propagateCorticalLabelsToNativeSpace($gmMask, $labelImage, $mniSpace, $outputRoot, $outputLabelName)
+# propagateCorticalLabelsToNativeSpace($gmMask, $labelImage, $mniSpace, $sessionOutputRoot, $outputLabelName)
 #
 # In addition to propagating the labels, make a QC file showing overlap between labels
 # before and after label propagation step.
 #
 sub propagateCorticalLabelsToNativeSpace {
 
-    my ($corticalMask, $labelImage, $mniSpace, $outputRoot, $outputLabelName) = @_;
+    my ($corticalMask, $labelImage, $mniSpace, $sessionOutputRoot, $outputLabelName) = @_;
 
-    my $tmpLabels = "${outputRoot}tmp${outputLabelName}.nii.gz";
+    if (-f "${sessionOutputRoot}${outputLabelName}.nii.gz") {
+        print "Found label image ${sessionOutputRoot}${outputLabelName}.nii.gz, skipping\n";
+        return;
+    }
 
-    my $warpString = "-t ${outputRoot}TemplateToSubject1GenericAffine.mat \\
-      -t ${outputRoot}TemplateToSubject0Warp.nii.gz";
+    my $tmpLabels = "${sessionOutputRoot}tmp${outputLabelName}.nii.gz";
+
+    my $warpString = "-t ${sessionOutputRoot}GroupTemplateToSubjectWarp.nii.gz";
 
     if ($mniSpace) {
-        $warpString = "-t ${outputRoot}TemplateToSubject1GenericAffine.mat \\
-          -t ${outputRoot}TemplateToSubject0Warp.nii.gz \\
+        $warpString = "-t ${sessionOutputRoot}GroupTemplateToSubjectWarp.nii.gz \\
           -t ${templateDir}/MNI152NLin2009cAsym/MNI152NLin2009cAsymToTemplateWarp.nii.gz";
     }
 
     my $warpCmd = "${antsPath}antsApplyTransforms \\
-      -d 3 -r ${outputRoot}ExtractedBrain0N4.nii.gz \\
+      -d 3 -r ${sessionOutputRoot}ExtractedBrain0N4.nii.gz \\
       $warpString \\
       -n GenericLabel \\
       -i $labelImage \\
@@ -353,10 +490,12 @@ sub propagateCorticalLabelsToNativeSpace {
 
     (system($warpCmd) == 0) or die("Could not warp labels $labelImage to subject space");
 
-    (system("${antsPath}ImageMath 3 ${outputRoot}${outputLabelName}.nii.gz PropagateLabelsThroughMask $corticalMask $tmpLabels 8 0")) == 0
+    (system("${antsPath}ImageMath 3 ${sessionOutputRoot}${outputLabelName}.nii.gz PropagateLabelsThroughMask " .
+            "$corticalMask $tmpLabels 8 0")) == 0
           or die("Could not propagate labels $labelImage through cortical mask");
 
-    system("${antsPath}LabelOverlapMeasures 3 ${outputRoot}${outputLabelName}.nii.gz $tmpLabels ${outputRoot}${outputLabelName}WarpedVsPropagated.csv");
+    system("${antsPath}LabelOverlapMeasures 3 ${sessionOutputRoot}${outputLabelName}.nii.gz $tmpLabels " .
+           "${sessionOutputRoot}${outputLabelName}WarpedVsPropagated.csv");
 
     system("rm -f $tmpLabels");
 }
@@ -366,31 +505,34 @@ sub propagateCorticalLabelsToNativeSpace {
 #
 # args: labelImage - label image in template space, to warp
 #       mniSpace - true if labels are in MNI152 space, false if they are in the local template space
-#       outputRoot - output root for antsCT. Used to find warps and name output
+#       sessionOutputRoot - output root for session processing. Used to find warps and name output
 #       outputLabelName - added to output root, eg "DKT31"
 #
-# warpLabelsToNativeSpace($labelImage, $mniSpace, $outputRoot, $outputLabelName)
+# warpLabelsToNativeSpace($labelImage, $mniSpace, $sessionOutputRoot, $outputLabelName)
 #
 #
 sub warpLabelsToNativeSpace {
 
-    my ($labelImage, $mniSpace, $outputRoot, $outputLabelName) = @_;
+    my ($labelImage, $mniSpace, $sessionOutputRoot, $outputLabelName) = @_;
 
-    my $warpString = "-t ${outputRoot}TemplateToSubject1GenericAffine.mat \\
-      -t ${outputRoot}TemplateToSubject0Warp.nii.gz";
+    if (-f "${sessionOutputRoot}${outputLabelName}.nii.gz") {
+        print "Found label image ${sessionOutputRoot}${outputLabelName}.nii.gz, skipping\n";
+        return;
+    }
+
+    my $warpString = "-t ${sessionOutputRoot}GroupTemplateToSubjectWarp.nii.gz";
 
     if ($mniSpace) {
-        $warpString = "-t ${outputRoot}TemplateToSubject1GenericAffine.mat \\
-          -t ${outputRoot}TemplateToSubject0Warp.nii.gz \\
+        $warpString = "-t ${sessionOutputRoot}GroupTemplateToSubjectWarp.nii.gz \\
           -t ${templateDir}/MNI152NLin2009cAsym/MNI152NLin2009cAsymToTemplateWarp.nii.gz";
     }
 
     my $warpCmd = "${antsPath}antsApplyTransforms \\
-      -d 3 -r ${outputRoot}ExtractedBrain0N4.nii.gz \\
+      -d 3 -r ${sessionOutputRoot}ExtractedBrain0N4.nii.gz \\
       $warpString \\
       -n GenericLabel \\
       -i $labelImage \\
-      -o ${outputRoot}${outputLabelName}.nii.gz";
+      -o ${sessionOutputRoot}${outputLabelName}.nii.gz";
 
     (system($warpCmd) == 0) or die("Could not warp labels $labelImage to subject space");
 }
