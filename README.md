@@ -56,10 +56,10 @@ template in templateflow v1.4.1.
 
 ```
 # For cross-sectional processing
-docker run --rm -it cookpa/antsct-aging:0.4.1 --help
+docker run --rm -it cookpa/antsct-aging:0.5.0 --help
 
 # For longitudinal processing
-docker run --rm -it cookpa/antsct-aging:0.4.1 --help --longitudinal
+docker run --rm -it cookpa/antsct-aging:0.5.0 --help --longitudinal
 ```
 
 
