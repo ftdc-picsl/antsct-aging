@@ -31,7 +31,17 @@ ${ANTSPATH}antsJointLabelFusion.sh \
   -g Brains/1119_3.nii.gz -l Segmentations/1119_3_seg.nii.gz \
   -g Brains/1122_3.nii.gz -l Segmentations/1122_3_seg.nii.gz \
   -g Brains/1125_3.nii.gz -l Segmentations/1125_3_seg.nii.gz \
-  -g Brains/1128_3.nii.gz -l Segmentations/1128_3_seg.nii.gz 
+  -g Brains/1128_3.nii.gz -l Segmentations/1128_3_seg.nii.gz
+
+
+Cortical labels
+---------------
+
+Cortical labels (labels >= 100) not listed as "ignore" in the segmentation
+challenge are included. Ignored labels have been removed. See the label
+definitions and the segmentation protocol at
+
+http://neuromorphometrics.com/Seg/
 
 
 Subcortical labels
@@ -54,4 +64,4 @@ Labeling, CreateSpace Independent Publishing Platform, Nice, France, 2012.].
 The data is released under the Creative Commons Attribution-NonCommercial
 license (CC BY-NC) with no end date.  Original MRI scans are from OASIS
 (https://www.oasis-brains.org/).  Labelings were provided by Neuromorphometrics,
-Inc. (http://Neuromorphometrics.com/) under academic subscription. 
+Inc. (http://Neuromorphometrics.com/) under academic subscription.
