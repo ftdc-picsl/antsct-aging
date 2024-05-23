@@ -1,11 +1,13 @@
 FROM antsx/ants:v2.4.3
 
 RUN apt-get update \
-    && apt install -y wget \
-    && apt install -y python3.7 python-pip \
-    && pip install setuptools \
-    && pip install pybids \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    && apt-get install -y wget \
+    && apt-get install -y python3.8 python3.8-distutils python3-pip \
+    && python3.8 -m pip install --upgrade pip \
+    && python3.8 -m pip install setuptools \
+    && python3.8 -m pip install pybids==0.15.6 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copy the template from the source repo and download any extra data, eg warps
 COPY template /opt/template
