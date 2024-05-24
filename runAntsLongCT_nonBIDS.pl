@@ -328,7 +328,7 @@ for (my $i = 0; $i < $numSessions; $i++) {
                                         $sessionOutputRoot, "DKT31");
 
     propagateCorticalLabelsToNativeSpace($sessionCorticalMask, "${templateDir}/labels/BrainCOLOR/BrainCOLORCortical.nii.gz", 0,
-                                        $outputRoot, "BrainColorCortical");
+                                        $sessionOutputRoot, "BrainColorCortical");
 
     # Scales go up to 250 and even 500, but they take a long time to interpolate
     my @lausanneScales = (33, 60, 125, 250);
