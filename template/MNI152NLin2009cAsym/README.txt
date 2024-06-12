@@ -20,5 +20,5 @@ align the atlases resampled into the two template spaces.
 
 For more details, see
 
-https://figshare.com/account/projects/96092/articles/13542053
+https://doi.org/10.6084/m9.figshare.13542053.v2
 
