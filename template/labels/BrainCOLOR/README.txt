@@ -54,6 +54,13 @@ definitions and the segmentation protocol at
 http://neuromorphometrics.com/Seg/
 
 
+Subcortical Thickness Labels
+----------------------------
+
+These are just internally to prevent propagation of cortical labels into these
+structures.
+
+
 Original atlas information
 --------------------------
 
