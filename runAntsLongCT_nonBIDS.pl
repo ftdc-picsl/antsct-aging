@@ -331,7 +331,7 @@ for (my $i = 0; $i < $numSessions; $i++) {
                                         $sessionOutputRoot, "BrainColorCortical");
 
     # Scales go up to 250 and even 500, but they take a long time to interpolate
-    my @lausanneScales = (33, 60, 125, 250);
+    my @lausanneScales = (33, 60, 125);
 
     foreach my $scale (@lausanneScales) {
         propagateCorticalLabelsToNativeSpace($sessionCorticalMask,
@@ -340,8 +340,7 @@ for (my $i = 0; $i < $numSessions; $i++) {
     }
 
     # Schaefer labels from MNI space
-
-    my @schaeferScales = (100, 200, 300, 400, 500);
+    my @schaeferScales = (100, 200);
     my @schaeferNetworks = (7, 17);
 
     foreach my $net (@schaeferNetworks) {
@@ -466,6 +465,9 @@ sub resetOrigin {
 # In addition to propagating the labels, make a QC file showing overlap between labels
 # before and after label propagation step.
 #
+# Note that labels will be shifted by +4 to add subcortical labels from the BrainCOLOR template label set. This is to prevent
+# propagation of cortical labels into hippocampus and amygdala. The labels are shifted back by -4 after propagation.
+#
 sub propagateCorticalLabelsToNativeSpace {
 
     my ($corticalMask, $labelImage, $mniSpace, $sessionOutputRoot, $outputLabelName) = @_;
@@ -477,30 +479,67 @@ sub propagateCorticalLabelsToNativeSpace {
 
     my $tmpLabels = "${sessionOutputRoot}tmp${outputLabelName}.nii.gz";
 
+    # Temporary labels to prevent propagation into subcortical structures
+    my $tmpSubcorticalThicknessLabels = "${sessionOutputRoot}tmpBrainCOLORSubcorticalThicknessLabels.nii.gz";
+
     my $warpString = "-t ${sessionOutputRoot}GroupTemplateToSubjectWarp.nii.gz";
+
+    # Warp subcortical labels from local template space - use these to prevent propagation into subcortical structures
+    my $warpSubcorticalCmd = "${antsPath}antsApplyTransforms \\
+      -d 3 -r ${sessionOutputRoot}ExtractedBrain0N4.nii.gz \\
+      $warpString \\
+      -n GenericLabel \\
+      -i ${templateDir}/labels/BrainCOLOR/BrainCOLORSubcorticalThicknessLabels.nii.gz \\
+      -o $tmpSubcorticalThicknessLabels";
+
+    (system($warpSubcorticalCmd) == 0) or die("Could not warp subcortical thickness labels");
 
     if ($mniSpace) {
         $warpString = "-t ${sessionOutputRoot}GroupTemplateToSubjectWarp.nii.gz \\
           -t ${templateDir}/MNI152NLin2009cAsym/MNI152NLin2009cAsymToTemplateWarp.nii.gz";
     }
 
-    my $warpCmd = "${antsPath}antsApplyTransforms \\
+    my $warpCorticalCmd = "${antsPath}antsApplyTransforms \\
       -d 3 -r ${sessionOutputRoot}ExtractedBrain0N4.nii.gz \\
       $warpString \\
       -n GenericLabel \\
       -i $labelImage \\
       -o $tmpLabels";
 
-    (system($warpCmd) == 0) or die("Could not warp labels $labelImage to subject space");
+    (system($warpCorticalCmd) == 0) or die("Could not warp labels $labelImage to subject space");
 
-    (system("${antsPath}ImageMath 3 ${sessionOutputRoot}${outputLabelName}.nii.gz PropagateLabelsThroughMask " .
-            "$corticalMask $tmpLabels 8 0")) == 0
-          or die("Could not propagate labels $labelImage through cortical mask");
+    # Mask the labels with the thickness mask, for QC only
+    my $tmpMaskedLabels = "${outputRoot}tmp${outputLabelName}MaskedNotPropagated.nii.gz";
 
-    system("${antsPath}LabelOverlapMeasures 3 ${sessionOutputRoot}${outputLabelName}.nii.gz $tmpLabels " .
-           "${sessionOutputRoot}${outputLabelName}WarpedVsPropagated.csv");
+    (system("${antsPath}ImageMath 3 $tmpMaskedLabels m $tmpLabels ${corticalMask}")) == 0
+      or die("Could not mask labels $tmpLabels");
+
+    # Output label overlap stats
+    (system("${antsPath}LabelOverlapMeasures 3 $tmpLabels $tmpMaskedLabels ${sessionOutputRoot}${outputLabelName}WarpedVsMasked.csv")) == 0
+      or die("Could not compute warped vs masked label overlap stats");
+
+    # Now shift labels by 4
+    (system("c3d $tmpLabels -dup -thresh 1 Inf 1 0 -popas mask -shift 4 -push mask -multiply -o $tmpLabels")) == 0
+      or die("Could not shift labels $tmpLabels");
+
+    # Add temporary subcortical labels
+    (system("${antsPath}ImageMath 3 $tmpLabels addtozero $tmpLabels $tmpSubcorticalThicknessLabels")) == 0
+      or die("Could not add BrainCOLOR subcortical labels to $tmpLabels");
+
+    # Now propagate labels through GM mask
+    (system("${antsPath}ImageMath 3 $tmpLabels PropagateLabelsThroughMask $corticalMask $tmpLabels 5 0")) == 0
+          or die("Could not propagate labels $tmpLabels through cortical mask");
+
+    # Remove temporary labels and shift back by -4
+    (system("c3d $tmpLabels -dup -thresh 5 Inf 1 0 -popas mask -shift -4 -push mask -multiply -o ${sessionOutputRoot}${outputLabelName}.nii.gz")) == 0
+      or die("Could not shift labels $tmpLabels");
+
+    (system("${antsPath}LabelOverlapMeasures 3 ${sessionOutputRoot}${outputLabelName}.nii.gz $tmpMaskedLabels ${sessionOutputRoot}${outputLabelName}MaskedVsPropagated.csv")) == 0
+      or die("Could not compute masked vs propagated label overlap stats");
 
     system("rm -f $tmpLabels");
+    system("rm -f $tmpMaskedLabels");
+    system("rm -f $tmpSubcorticalThicknessLabels");
 }
 
 
