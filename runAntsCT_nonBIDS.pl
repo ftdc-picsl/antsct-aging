@@ -44,7 +44,7 @@ my $usage = qq{
 
     DKT31, the Desikan-Killiany-Tourville parcellation from Mindboggle
 
-    Lausanne, subdivisions of the DKT31 labels to finer scales of (60, 125, 250) parcels
+    Lausanne, subdivisions of the DKT31 labels to finer scales of (33, 60, 125) parcels
 
   Because the template priors include hippocampus and amygdala as gray matter, these labels must also be included in the
   cortical label sets. Otherwise, the label propagation will fail in labels close to the medial temporal lobe. The BrainCOLOR
@@ -105,7 +105,7 @@ my $usage = qq{
 
    --mni-cortical-labels
      One or more cortical label images in the MNI152NLin2009cAsym space, to be propagated to the
-     subject's cortical mask. Use this option if the label set contains only cortical labels plus hippocampus and amygdala.
+     subject's cortical mask.
 
    --mni-labels
      One or more generic label images in the MNI152NLin2009cAsym space, to be warped to the subject space.
@@ -225,31 +225,40 @@ system("${antsPath}antsRegistration --version >> ${outputRoot}antsVersionInfo.tx
 
 my $antsInputImage = "${outputRoot}PreprocessedInput.nii.gz";
 
-if (($trimNeckMode eq "crop") || ($trimNeckMode eq "mask")) {
-    my $trimNeckOpts = "-d -c 10 -m ${outputRoot}NeckTrimMask.nii.gz";
-
-    if ($trimNeckMode eq "mask") {
-        $trimNeckOpts = $trimNeckOpts . " -r ";
-    }
-
-    system("trim_neck.sh $trimNeckOpts $anatomicalImage $antsInputImage > ${outputRoot}TrimNeckOutput.txt") == 0
-      or die("Neck trimming exited with nonzero status");
-}
-elsif ($trimNeckMode eq "none") {
-    system("cp $anatomicalImage $antsInputImage") == 0 or die("Cannot create preprocessed anatomical image");
+if (-f $antsInputImage) {
+    print "Found preprocessed image $antsInputImage, skipping preprocessing\n";
 }
 else {
-    die("Unrecognized neck trim option $trimNeckMode");
-}
+    if (($trimNeckMode eq "crop") || ($trimNeckMode eq "mask")) {
+        my $trimNeckOpts = "-d -c 10 -m ${outputRoot}NeckTrimMask.nii.gz";
 
-# pad image
-if (${padMM} > 0) {
-    print "Padding input image by ${padMM}mm\n";
-    system("c3d $antsInputImage -pad ${padMM}x${padMM}x${padMM}mm ${padMM}x${padMM}x${padMM}mm 0 -o $antsInputImage") == 0
-      or die("Cannot pad input image");
+        if ($trimNeckMode eq "mask") {
+            $trimNeckOpts = $trimNeckOpts . " -r ";
+        }
+
+        system("trim_neck.sh $trimNeckOpts $anatomicalImage $antsInputImage > ${outputRoot}TrimNeckOutput.txt") == 0
+        or die("Neck trimming exited with nonzero status");
+    }
+    elsif ($trimNeckMode eq "none") {
+        system("cp $anatomicalImage $antsInputImage") == 0 or die("Cannot create preprocessed anatomical image");
+    }
+    else {
+        die("Unrecognized neck trim option $trimNeckMode");
+    }
+
+    # pad image
+    if (${padMM} > 0) {
+        print "Padding input image by ${padMM}mm\n";
+        system("c3d $antsInputImage -pad ${padMM}x${padMM}x${padMM}mm ${padMM}x${padMM}x${padMM}mm 0 -o $antsInputImage") == 0
+        or die("Cannot pad input image");
+    }
 }
 
 # Import or define brain mask outside of antsCT, if requested
+if (${brainMaskImage} ne "" && !(-f ${brainMaskImage})) {
+    die("Cannot find brain mask image ${brainMaskImage}");
+}
+
 if (-f ${brainMaskImage} ) {
     print "Using brain mask image $brainMaskImage\n";
 
@@ -323,14 +332,14 @@ propagateCorticalLabelsToNativeSpace($corticalMask, "${templateDir}/labels/DKT31
 propagateCorticalLabelsToNativeSpace($corticalMask, "${templateDir}/labels/BrainCOLOR/BrainCOLORCortical.nii.gz", 0, $outputRoot, "BrainColorCortical");
 
 # Scales go up to 250 and even 500, but they take a long time to interpolate
-my @lausanneScales = (33, 60, 125, 250);
+my @lausanneScales = (33, 60, 125);
 
 foreach my $scale (@lausanneScales) {
     propagateCorticalLabelsToNativeSpace($corticalMask, "${templateDir}/labels/LausanneCortical/Lausanne_Scale${scale}.nii.gz",
                                          0, $outputRoot, "LausanneCorticalScale${scale}");
 }
 
-my @schaeferScales = (100, 200, 300, 400);
+my @schaeferScales = (100, 200);
 my @schaeferNetworks = (7, 17);
 
 foreach my $net (@schaeferNetworks) {
@@ -426,7 +435,7 @@ sub propagateCorticalLabelsToNativeSpace {
       or die("Could not compute warped vs masked label overlap stats");
 
     # Now shift labels by 4
-    (system("c3d $tmpLabels -dup -thresh 1 Inf 1 0 -popas mask -shift 4 -multiply mask -o $tmpLabels")) == 0
+    (system("c3d $tmpLabels -dup -thresh 1 Inf 1 0 -popas mask -shift 4 -push mask -multiply -o $tmpLabels")) == 0
       or die("Could not shift labels $tmpLabels");
 
     # Add temporary subcortical labels
@@ -434,11 +443,11 @@ sub propagateCorticalLabelsToNativeSpace {
       or die("Could not add BrainCOLOR subcortical labels to $tmpLabels");
 
     # Now propagate labels through GM mask
-    (system("${antsPath}ImageMath 3 ${outputRoot}${outputLabelName}.nii.gz PropagateLabelsThroughMask $corticalMask $tmpLabels 5 0")) == 0
+    (system("${antsPath}ImageMath 3 $tmpLabels PropagateLabelsThroughMask $corticalMask $tmpLabels 5 0")) == 0
           or die("Could not propagate labels $tmpLabels through cortical mask");
 
     # Remove temporary labels and shift back by -4
-    (system("c3d $tmpLabels -dup -thresh 5 Inf 1 0 -popas mask -shift -4 -multiply mask -o $tmpLabels")) == 0
+    (system("c3d $tmpLabels -dup -thresh 5 Inf 1 0 -popas mask -shift -4 -push mask -multiply -o ${outputRoot}${outputLabelName}.nii.gz")) == 0
       or die("Could not shift labels $tmpLabels");
 
     (system("${antsPath}LabelOverlapMeasures 3 ${outputRoot}${outputLabelName}.nii.gz $tmpMaskedLabels ${outputRoot}${outputLabelName}MaskedVsPropagated.csv")) == 0
